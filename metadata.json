@@ -1,0 +1,6 @@
+{
+  "name": "NITA Food Products",
+  "description": "Official premium website and admin portal for NITA Food Products, leading Tanzanian Food Processing and Manufacturing company.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Montserrat:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Poppins", "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-emerald-50: #f0faf0;
+  --color-emerald-100: #def8df;
+  --color-emerald-200: #bdf0be;
+  --color-emerald-300: #8fe491;
+  --color-emerald-400: #59d25b;
+  --color-emerald-500: #1cb71f;
+  --color-emerald-600: #008b07;
+  --color-emerald-700: #007305;
+  --color-emerald-800: #005b04;
+  --color-emerald-900: #004302;
+  --color-emerald-950: #002201;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f8fafc;
+}
+
+/* Custom scrollbar to keep layout premium */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

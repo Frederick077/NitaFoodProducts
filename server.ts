@@ -236,9 +236,28 @@ function initDB() {
 
 const db = initDB();
 
-// Sync in-memory db with file
-function saveDB() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+// Sync in-memory db with file (debounced to avoid excessive disk I/O)
+let saveTimeout: NodeJS.Timeout | null = null;
+function saveDB(immediate = false) {
+  if (immediate) {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+    } catch (err) {
+      console.error("Failed to save db.json:", err);
+    }
+    return;
+  }
+  if (!saveTimeout) {
+    saveTimeout = setTimeout(() => {
+      saveTimeout = null;
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+      } catch (err) {
+        console.error("Failed to save db.json:", err);
+      }
+    }, 300);
+  }
 }
 
 // Middleware
@@ -545,7 +564,12 @@ app.post("/api/messages", (req, res) => {
 async function start() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        watch: {
+          ignored: ["**/db.json", "**/db.json*"]
+        }
+      },
       appType: "spa"
     });
     app.use(vite.middlewares);

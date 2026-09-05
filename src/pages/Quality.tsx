@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { 
   ShieldCheck, 
@@ -15,10 +16,37 @@ import {
 import { trackPageView } from '../utils';
 import SafeImage from '../components/SafeImage';
 
+interface CertImage {
+  id: string;
+  imageUrl: string;
+  title?: string;
+  altText?: string;
+}
+
 export default function Quality() {
+  const location = useLocation();
+  const [certImages, setCertImages] = useState<CertImage[]>([]);
+
   useEffect(() => {
     trackPageView('/quality');
-  }, []);
+    if (location.hash) {
+      const el = document.querySelector(location.hash);
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
+    }
+
+    fetch('/api/site-images?section=QUALITY_CERTIFICATIONS')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCertImages(data);
+        }
+      })
+      .catch((e) => console.error('Error fetching quality images:', e));
+  }, [location.hash]);
 
   const standards = [
     {
@@ -77,12 +105,12 @@ export default function Quality() {
       <section className="relative py-16 bg-emerald-950 text-white overflow-hidden">
         <div className="absolute inset-0">
           <SafeImage 
-            src="" 
-            alt="Laboratory quality testing" 
-            placeholderText="Upload Quality Assurance Banner"
-            className="w-full h-full object-cover opacity-15 filter brightness-50"
+            src={certImages[0]?.imageUrl || ""} 
+            alt="Quality and certifications verification" 
+            placeholderText="NITA Quality Assurance Standards"
+            className="w-full h-full object-cover opacity-20 filter brightness-75"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-emerald-950/70 to-emerald-950" />
+          <div className="absolute inset-0 bg-gradient-to-b from-emerald-950/80 to-emerald-950" />
         </div>
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-4">
@@ -184,7 +212,7 @@ export default function Quality() {
       </section>
 
       {/* Safety Certifications Banner */}
-      <section className="py-20 bg-emerald-950 text-white px-4 md:px-8 text-center relative overflow-hidden">
+      <section className="py-20 bg-emerald-950 text-white px-4 md:px-8 text-center relative overflow-hidden" id="certifications">
         <div className="max-w-4xl mx-auto space-y-8 relative z-10">
           <FileCheck2 className="w-12 h-12 text-orange-400 mx-auto" />
           <h2 className="text-2xl sm:text-4xl font-extrabold font-sans tracking-tight">
@@ -198,6 +226,35 @@ export default function Quality() {
             <span className="px-4 py-2 rounded-xl bg-emerald-900/50 border border-emerald-800">Aseptic Sealing</span>
             <span className="px-4 py-2 rounded-xl bg-emerald-900/50 border border-emerald-800">TBS Certified</span>
           </div>
+
+          {certImages.length > 0 && (
+            <div className="pt-8">
+              <h3 className="text-xs uppercase tracking-widest text-emerald-300 font-bold mb-6">
+                Verified Certification & Inspection Seals
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
+                {certImages.map((cert) => (
+                  <div 
+                    key={cert.id}
+                    className="bg-emerald-900/40 rounded-2xl p-4 border border-emerald-800/80 backdrop-blur-sm space-y-3"
+                  >
+                    <div className="h-44 rounded-xl overflow-hidden bg-emerald-950/60 border border-emerald-800/50">
+                      <SafeImage
+                        src={cert.imageUrl}
+                        alt={cert.altText || cert.title || 'Quality Certification'}
+                        placeholderText="Certificate Seal"
+                        className="w-full h-full object-cover hover:scale-105 transition duration-300"
+                      />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">{cert.title || 'Official Quality Seal'}</h4>
+                      {cert.altText && <p className="text-xs text-emerald-300/80 mt-1">{cert.altText}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </div>

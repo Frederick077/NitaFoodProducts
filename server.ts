@@ -1,290 +1,103 @@
-import express from "express";
-import path from "path";
-import fs from "fs";
-import crypto from "crypto";
-import { createServer as createViteServer } from "vite";
+import express from 'express';
+import path from 'path';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import multer from 'multer';
+import { createServer as createViteServer } from 'vite';
+import { prisma } from './src/lib/prisma';
+import { uploadImageFile, deleteImageFile, isCloudinaryConfigured, validateCloudinaryConfig } from './src/server/imageStorage';
 
 const app = express();
 const PORT = 3000;
-const DB_FILE = path.join(process.cwd(), "db.json");
-const SECRET_KEY = "nita-secret-token-key-2026";
-
-// Create database if not exists
-function initDB() {
-  if (fs.existsSync(DB_FILE)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-      // Ensure all tables exist
-      if (data.users && data.products && data.orders && data.gallery && data.messages && data.analytics) {
-        return data;
-      }
-    } catch (e) {
-      console.error("Database file corrupted, recreating...");
-    }
-  }
-
-  // Pre-seed database with premium food products, gallery images, users and initial stats
-  const initialData = {
-    users: [
-      {
-        id: "usr-admin-1",
-        name: "Nita Administrator",
-        email: "admin@nitafoods.co.tz",
-        // SHA-256 for "nita2026"
-        password: crypto.createHash("sha256").update("nita2026").digest("hex"),
-        role: "Admin",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "usr-manager-1",
-        name: "Nita Operations Manager",
-        email: "manager@nitafoods.co.tz",
-        // SHA-256 for "nita2026"
-        password: crypto.createHash("sha256").update("nita2026").digest("hex"),
-        role: "Manager",
-        createdAt: new Date().toISOString()
-      }
-    ],
-    products: [
-      {
-        id: "prod-1",
-        name: "NITA Pumpkin Seeds (Peeled)",
-        description: "Premium quality Tanzanian organic pumpkin seeds, shelled and ready to eat or add to healthy dishes. High in natural magnesium, zinc, and antioxidants.",
-        category: "Seeds & Nuts",
-        price: 15000,
-        image: "",
-        sizes: ["250g", "500g", "1kg"],
-        ingredients: "100% natural, premium hulled Tanzanian pumpkin seeds.",
-        benefits: "Rich in antioxidants, supports prostate and heart health, high in iron, zinc, and dietary fiber.",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "prod-2",
-        name: "NITA Pumpkin Seeds (Roasted & Salted)",
-        description: "Deliciously roasted Tanzanian pumpkin seeds lightly tossed with organic sea salt. A healthy and satisfying crunch for work, gym, or transit.",
-        category: "Seeds & Nuts",
-        price: 12000,
-        image: "",
-        sizes: ["150g", "250g", "500g"],
-        ingredients: "Organic pumpkin seeds, organic sea salt, hint of cold-pressed sunflower oil.",
-        benefits: "Instant energy booster, outstanding source of plant protein, packed with healthy fats, and supports immunity.",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "prod-3",
-        name: "NITA Sunflower Seeds (Peeled)",
-        description: "Sun-ripened organic Tanzanian sunflower seeds, de-shelled with precision under pristine hygiene conditions. Perfect for direct snacking, salad toppings, and baking.",
-        category: "Seeds & Nuts",
-        price: 8000,
-        image: "",
-        sizes: ["250g", "500g", "1kg"],
-        ingredients: "100% organic Tanzanian shelled sunflower seeds.",
-        benefits: "Abundant in Vitamin E to support glowing skin, anti-inflammatory properties, regulates blood sugar, and supports immune system.",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "prod-4",
-        name: "NITA Honey & Raisin Granola Bar",
-        description: "Baked whole-grain granola bar bound together with wild Tanzanian forest honey, premium raisins, organic sesame seeds, and toasted pumpkin seeds. No artificial colors or preservatives.",
-        category: "Snacks & Energy Bars",
-        price: 3500,
-        image: "",
-        sizes: ["Pack of 5", "Pack of 10"],
-        ingredients: "Organic rolled oats, wild Tanzanian honey, premium dried raisins, sesame seeds, pumpkin seeds, cold-pressed sunflower oil.",
-        benefits: "High in dietary fiber, sustains energy release, aids digestive health, and makes a smart alternative to sugary snacks.",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "prod-5",
-        name: "NITA Chia & Sesame Granola Bar",
-        description: "High-protein roasted sesame and whole chia seed granola bar sweetened naturally. Specially crafted for athletes, busy professionals, and school lunch boxes.",
-        category: "Snacks & Energy Bars",
-        price: 4000,
-        image: "",
-        sizes: ["Pack of 5", "Pack of 10"],
-        ingredients: "Organic rolled oats, roasted sesame seeds, organic chia seeds, Tanzanian forest honey, natural vanilla extract, sea salt.",
-        benefits: "Rich in Omega-3 fatty acids, supports brain and heart health, strong endurance fuel source, and rich in calcium.",
-        createdAt: new Date().toISOString()
-      }
-    ],
-    orders: [
-      {
-        id: "ord-101",
-        customerName: "Salum Masanja",
-        phone: "+255 712 345 678",
-        productId: "prod-1",
-        quantity: 3,
-        size: "500g",
-        status: "Completed",
-        createdAt: new Date(Date.now() - 48 * 3600000).toISOString()
-      },
-      {
-        id: "ord-102",
-        customerName: "Rehema Mwangi",
-        phone: "+255 754 987 654",
-        productId: "prod-4",
-        quantity: 2,
-        size: "Pack of 10",
-        status: "Processing",
-        createdAt: new Date(Date.now() - 12 * 3600000).toISOString()
-      },
-      {
-        id: "ord-103",
-        customerName: "John Mndeme",
-        phone: "+255 655 443 322",
-        productId: "prod-3",
-        quantity: 5,
-        size: "1kg",
-        status: "Pending",
-        createdAt: new Date(Date.now() - 2 * 3600000).toISOString()
-      }
-    ],
-    gallery: [
-      {
-        id: "gal-1",
-        image: "",
-        category: "Products",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-2",
-        image: "",
-        category: "Products",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-3",
-        image: "",
-        category: "Packaging",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-4",
-        image: "",
-        category: "Packaging",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-5",
-        image: "",
-        category: "Production Process",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-6",
-        image: "",
-        category: "Production Process",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-7",
-        image: "",
-        category: "Company Events",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-8",
-        image: "",
-        category: "Company Events",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-9",
-        image: "",
-        category: "Customers",
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: "gal-10",
-        image: "",
-        category: "Customers",
-        createdAt: new Date().toISOString()
-      }
-    ],
-    messages: [
-      {
-        id: "msg-1",
-        name: "Fatma Said",
-        email: "fatmasaid@gmail.com",
-        phone: "+255 784 111 222",
-        message: "Hello NITA Food Products. I run an organic supermarket in Dar es Salaam, and we are interested in stocking your whole line of peeled pumpkin seeds and granola bars. Can you provide wholesale price lists? Shukran.",
-        createdAt: new Date(Date.now() - 36 * 3600000).toISOString()
-      }
-    ],
-    analytics: {
-      visitors: 1240,
-      pageViews: {
-        "/": 845,
-        "/about": 320,
-        "/products": 654,
-        "/gallery": 195,
-        "/quality": 210,
-        "/contact": 152,
-        "/admin": 45
-      },
-      popularProducts: {
-        "prod-1": 142,
-        "prod-4": 98,
-        "prod-3": 65
-      }
-    }
-  };
-
-  fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), "utf-8");
-  return initialData;
-}
-
-const db = initDB();
-
-// Sync in-memory db with file (debounced to avoid excessive disk I/O)
-let saveTimeout: NodeJS.Timeout | null = null;
-function saveDB(immediate = false) {
-  if (immediate) {
-    if (saveTimeout) clearTimeout(saveTimeout);
-    try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-    } catch (err) {
-      console.error("Failed to save db.json:", err);
-    }
-    return;
-  }
-  if (!saveTimeout) {
-    saveTimeout = setTimeout(() => {
-      saveTimeout = null;
-      try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-      } catch (err) {
-        console.error("Failed to save db.json:", err);
-      }
-    }, 300);
-  }
-}
+const JWT_SECRET = process.env.JWT_SECRET || 'nita-food-jwt-secret-key-2026';
 
 // Middleware
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Custom simple token creator and verifier (like JWT)
-function generateToken(payload: { id: string; name: string; email: string; role: string }) {
+// Serve local uploaded images statically
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// Multer upload config: 10MB limit, image mimetypes only
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/avif'];
+    if (allowed.includes(file.mimetype.toLowerCase())) {
+      cb(null, true);
+    } else {
+      cb(new Error('Unsupported image format. Allowed formats: JPG, JPEG, PNG, WebP.'));
+    }
+  },
+});
+
+// Helper to ensure an Admin account exists on startup
+async function ensureAdminExists() {
+  try {
+    const adminCount = await prisma.admin.count();
+    if (adminCount === 0) {
+      const adminEmail = process.env.ADMIN_INITIAL_EMAIL || 'admin@nitafoods.local';
+      const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || 'admin123';
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(adminPassword, salt);
+
+      await prisma.admin.create({
+        data: {
+          name: 'NITA Administrator',
+          email: adminEmail,
+          passwordHash,
+        },
+      });
+      console.log(`[Database] Initial Admin account provisioned: ${adminEmail}`);
+    }
+  } catch (err) {
+    console.warn('[Database] Note: Could not auto-check admin on boot (run prisma migrate if DB is new):', err);
+  }
+}
+
+// Clean any legacy placeholder stock images from database
+async function ensureDefaultSiteImages() {
+  try {
+    const legacyImages = await prisma.siteImage.findMany({
+      where: {
+        imageUrl: { contains: 'unsplash.com' }
+      }
+    });
+    if (legacyImages.length > 0) {
+      for (const img of legacyImages) {
+        await prisma.siteImage.delete({ where: { id: img.id } });
+      }
+      console.log(`[Database] Removed ${legacyImages.length} legacy stock placeholder images.`);
+    }
+  } catch (err) {
+    // Non-blocking database check
+  }
+}
+
+// Token generation and verification
+function generateToken(payload: { id: string; name: string; email: string; role: 'Admin' }) {
   const payloadStr = JSON.stringify({ ...payload, exp: Date.now() + 24 * 60 * 60 * 1000 });
-  const base64Payload = Buffer.from(payloadStr).toString("base64");
-  const signature = crypto.createHmac("sha256", SECRET_KEY).update(base64Payload).digest("hex");
+  const base64Payload = Buffer.from(payloadStr).toString('base64');
+  const signature = crypto.createHmac('sha256', JWT_SECRET).update(base64Payload).digest('hex');
   return `${base64Payload}.${signature}`;
 }
 
 function verifyToken(token: string) {
   try {
-    const [base64Payload, signature] = token.split(".");
+    const [base64Payload, signature] = token.split('.');
     if (!base64Payload || !signature) return null;
-    const expectedSignature = crypto.createHmac("sha256", SECRET_KEY).update(base64Payload).digest("hex");
+    const expectedSignature = crypto.createHmac('sha256', JWT_SECRET).update(base64Payload).digest('hex');
     if (signature !== expectedSignature) return null;
 
-    const payload = JSON.parse(Buffer.from(base64Payload, "base64").toString("utf-8"));
+    const payload = JSON.parse(Buffer.from(base64Payload, 'base64').toString('utf-8'));
     if (Date.now() > payload.exp) {
-      return null; // expired
+      return null;
     }
     return payload;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -292,298 +105,1166 @@ function verifyToken(token: string) {
 // Auth Middleware
 function requireAuth(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Access denied. No token provided." });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Access denied. No authentication token provided.' });
   }
 
-  const token = authHeader.split(" ")[1];
+  const token = authHeader.split(' ')[1];
+  if (!token || token === 'null' || token === 'undefined') {
+    return res.status(401).json({ success: false, error: 'Access denied. Authentication token is missing or invalid.' });
+  }
+
   const decoded = verifyToken(token);
   if (!decoded) {
-    return res.status(401).json({ error: "Invalid or expired token." });
+    return res.status(401).json({ success: false, error: 'Your session has expired. Please log in again.' });
   }
 
   req.user = decoded;
   next();
 }
 
+// Helper to format product for rich API response
+function formatProduct(p: any) {
+  const images = (p.images || []).map((img: any) => ({
+    id: img.id,
+    productId: img.productId,
+    imageUrl: img.imageUrl || '',
+    storagePublicId: img.storagePublicId || '',
+    altText: img.altText || p.name || 'Product Image',
+    position: img.position ?? 0,
+    createdAt: img.createdAt ? (typeof img.createdAt === 'string' ? img.createdAt : img.createdAt.toISOString()) : new Date().toISOString(),
+  }));
+
+  const variants = (p.variants || []).map((v: any) => ({
+    id: v.id,
+    productId: v.productId,
+    name: v.name || v.size || 'Standard',
+    size: v.size || 'Standard',
+    price: Number(v.price) || 0,
+    compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
+    available: v.available !== undefined ? Boolean(v.available) : true,
+    stock: v.stock !== undefined ? Number(v.stock) : 50,
+    sku: v.sku || '',
+    createdAt: v.createdAt ? (typeof v.createdAt === 'string' ? v.createdAt : v.createdAt.toISOString()) : new Date().toISOString(),
+    updatedAt: v.updatedAt ? (typeof v.updatedAt === 'string' ? v.updatedAt : v.updatedAt.toISOString()) : new Date().toISOString(),
+  }));
+
+  // Derive base price (minimum price among available variants or first variant)
+  let basePrice = 0;
+  let compareAtPrice: number | null = null;
+  if (variants.length > 0) {
+    const sorted = [...variants].sort((a, b) => a.price - b.price);
+    basePrice = sorted[0].price;
+    compareAtPrice = sorted[0].compareAtPrice || null;
+  } else if (p.price) {
+    basePrice = Number(p.price);
+  }
+
+  // Derive primary image
+  const primaryImage = p.featuredImageUrl || (images.length > 0 ? images[0].imageUrl : '') || p.imageUrl || '';
+
+  // Derive sizes array
+  const sizes = variants.length > 0 ? variants.map((v: any) => v.size) : (p.sizes ? p.sizes.map((s: any) => (typeof s === 'string' ? s : s.size)) : ['250g', '500g', '1kg']);
+
+  return {
+    id: p.id,
+    name: p.name,
+    slug: p.slug || p.id,
+    shortDescription: p.shortDescription || '',
+    description: p.description || '',
+    category: p.category || 'Seeds & Nuts',
+    featuredImageUrl: primaryImage,
+    featuredImagePublicId: p.featuredImagePublicId || '',
+    available: p.available !== undefined ? Boolean(p.available) : true,
+    isFeatured: Boolean(p.isFeatured),
+    ingredients: p.ingredients || '',
+    benefits: p.benefits || '',
+    images,
+    variants,
+    // Convenience backward-compatibility properties:
+    price: basePrice,
+    compareAtPrice,
+    image: primaryImage,
+    sizes,
+    createdAt: p.createdAt ? (typeof p.createdAt === 'string' ? p.createdAt : p.createdAt.toISOString()) : new Date().toISOString(),
+    updatedAt: p.updatedAt ? (typeof p.updatedAt === 'string' ? p.updatedAt : p.updatedAt.toISOString()) : new Date().toISOString(),
+  };
+}
+
+// Helper to format gallery item
+function formatGalleryItem(g: any) {
+  return {
+    id: g.id,
+    title: g.title || '',
+    description: g.description || '',
+    image: g.imageUrl || '',
+    imageUrl: g.imageUrl || '',
+    storagePublicId: g.storagePublicId || '',
+    altText: g.altText || g.title || '',
+    position: g.position ?? 0,
+    enabled: g.enabled !== undefined ? Boolean(g.enabled) : true,
+    category: g.category,
+    createdAt: g.createdAt ? (typeof g.createdAt === 'string' ? g.createdAt : g.createdAt.toISOString()) : new Date().toISOString(),
+    updatedAt: g.updatedAt ? (typeof g.updatedAt === 'string' ? g.updatedAt : g.updatedAt.toISOString()) : new Date().toISOString(),
+  };
+}
+
 // ==========================================
-// API ENDPOINTS
+// API ENDPOINTS (PostgreSQL via Prisma)
 // ==========================================
 
 // --- AUTH ---
-app.post("/api/auth/login", (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password are required." });
-  }
-
-  const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
-  const user = db.users.find((u: any) => u.email === email && u.password === hashedPassword);
-
-  if (!user) {
-    return res.status(401).json({ error: "Invalid email or password." });
-  }
-
-  const token = generateToken({ id: user.id, name: user.name, email: user.email, role: user.role });
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
     }
-  });
+
+    const admin = await prisma.admin.findUnique({
+      where: { email: email.toLowerCase().trim() },
+    });
+
+    if (!admin) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const isValid = await bcrypt.compare(password, admin.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = generateToken({
+      id: admin.id,
+      name: admin.name,
+      email: admin.email,
+      role: 'Admin',
+    });
+
+    res.json({
+      token,
+      user: {
+        id: admin.id,
+        name: admin.name,
+        email: admin.email,
+        role: 'Admin',
+      },
+    });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error during authentication.' });
+  }
 });
 
 // --- ANALYTICS TRACKING ---
-app.post("/api/analytics/visit", (req, res) => {
-  const { path } = req.body;
-  if (!path) return res.status(400).json({ error: "Path is required" });
+app.post('/api/analytics/visit', async (req, res) => {
+  try {
+    const { path } = req.body;
+    if (!path) return res.status(400).json({ error: 'Path is required' });
 
-  db.analytics.visitors += 1;
-  db.analytics.pageViews[path] = (db.analytics.pageViews[path] || 0) + 1;
-  saveDB();
-  res.json({ success: true });
+    await prisma.analyticsEvent.create({
+      data: {
+        eventType: 'pageview',
+        page: path,
+      },
+    });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Analytics track error:', err);
+    res.status(500).json({ error: 'Could not record analytics event.' });
+  }
 });
 
-app.get("/api/analytics", requireAuth, (req, res) => {
-  // Hydrate additional sales info
-  let sales = 0;
-  db.orders.forEach((o: any) => {
-    if (o.status === "Completed") {
-      const prod = db.products.find((p: any) => p.id === o.productId);
-      if (prod) {
-        sales += prod.price * o.quantity;
-      }
-    }
-  });
+app.get('/api/analytics', requireAuth, async (req, res) => {
+  try {
+    const [events, products, orders] = await Promise.all([
+      prisma.analyticsEvent.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 2000,
+      }),
+      prisma.product.findMany(),
+      prisma.order.findMany({
+        include: { product: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
 
-  res.json({
-    visitors: db.analytics.visitors,
-    pageViews: db.analytics.pageViews,
-    popularProducts: db.analytics.popularProducts,
-    totalProducts: db.products.length,
-    totalOrders: db.orders.length,
-    totalSales: sales,
-    orders: db.orders
-  });
+    const pageViews: Record<string, number> = {};
+    const popularProducts: Record<string, number> = {};
+
+    events.forEach((ev: any) => {
+      if (ev.eventType === 'pageview') {
+        pageViews[ev.page] = (pageViews[ev.page] || 0) + 1;
+      }
+      if (ev.productId) {
+        popularProducts[ev.productId] = (popularProducts[ev.productId] || 0) + 1;
+      }
+    });
+
+    let totalSales = 0;
+    orders.forEach((o: any) => {
+      if (o.status === 'Completed' && o.product) {
+        const prod = formatProduct(o.product);
+        totalSales += prod.price * o.quantity;
+      }
+    });
+
+    res.json({
+      visitors: events.length || 1,
+      pageViews,
+      popularProducts,
+      totalProducts: products.length,
+      totalOrders: orders.length,
+      totalSales,
+      orders: orders.map((o: any) => ({
+        id: o.id,
+        customerName: o.customerName,
+        phone: o.phone,
+        productId: o.productId,
+        productName: o.product?.name || 'Unknown Product',
+        productPrice: o.product ? formatProduct(o.product).price : 0,
+        quantity: o.quantity,
+        size: o.size || 'Standard',
+        status: o.status,
+        createdAt: o.createdAt ? (typeof o.createdAt === 'string' ? o.createdAt : o.createdAt.toISOString()) : new Date().toISOString(),
+      })),
+    });
+  } catch (err: any) {
+    console.error('Get analytics error:', err);
+    res.status(500).json({ error: 'Failed to fetch analytics summary.' });
+  }
 });
 
 // --- PRODUCTS ---
-app.get("/api/products", (req, res) => {
-  res.json(db.products);
-});
+app.get('/api/products', async (req, res) => {
+  try {
+    const { category, featured, search } = req.query;
 
-app.get("/api/products/:id", (req, res) => {
-  const product = db.products.find((p: any) => p.id === req.params.id);
-  if (!product) return res.status(404).json({ error: "Product not found" });
+    const where: any = {};
+    if (featured === 'true') {
+      where.isFeatured = true;
+    }
+    if (category && category !== 'All') {
+      where.category = String(category);
+    }
 
-  // Track product search view popularity in analytics
-  db.analytics.popularProducts[product.id] = (db.analytics.popularProducts[product.id] || 0) + 1;
-  saveDB();
+    const products = await prisma.product.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
 
-  res.json(product);
-});
+    let formatted = products.map(formatProduct);
 
-app.post("/api/products", requireAuth, (req, res) => {
-  const { name, description, category, price, image, sizes, ingredients, benefits } = req.body;
-  if (!name || !description || !category || !price) {
-    return res.status(400).json({ error: "Name, description, category, and price are required." });
+    if (search) {
+      const q = String(search).toLowerCase();
+      formatted = formatted.filter(
+        (p: any) =>
+          p.name.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          (p.shortDescription && p.shortDescription.toLowerCase().includes(q)) ||
+          (p.ingredients && p.ingredients.toLowerCase().includes(q))
+      );
+    }
+
+    res.json(formatted);
+  } catch (err: any) {
+    console.error('Get products error:', err);
+    res.status(500).json({ error: 'Failed to retrieve products.' });
   }
-
-  const newProduct = {
-    id: "prod-" + Date.now(),
-    name,
-    description,
-    category,
-    price: Number(price),
-    image: image || "",
-    sizes: Array.isArray(sizes) ? sizes : ["250g", "500g", "1kg"],
-    ingredients: ingredients || "Pure natural food product",
-    benefits: benefits || "Rich in essential vitamins and nutrients",
-    createdAt: new Date().toISOString()
-  };
-
-  db.products.push(newProduct);
-  saveDB();
-  res.status(201).json(newProduct);
 });
 
-app.put("/api/products/:id", requireAuth, (req, res) => {
-  const index = db.products.findIndex((p: any) => p.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Product not found" });
-
-  const { name, description, category, price, image, sizes, ingredients, benefits } = req.body;
-  const existing = db.products[index];
-
-  db.products[index] = {
-    ...existing,
-    name: name !== undefined ? name : existing.name,
-    description: description !== undefined ? description : existing.description,
-    category: category !== undefined ? category : existing.category,
-    price: price !== undefined ? Number(price) : existing.price,
-    image: image !== undefined ? image : existing.image,
-    sizes: sizes !== undefined ? (Array.isArray(sizes) ? sizes : existing.sizes) : existing.sizes,
-    ingredients: ingredients !== undefined ? ingredients : existing.ingredients,
-    benefits: benefits !== undefined ? benefits : existing.benefits
-  };
-
-  saveDB();
-  res.json(db.products[index]);
+// Alias
+app.get('/api/admin/products', requireAuth, async (req, res) => {
+  try {
+    const products = await prisma.product.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(products.map(formatProduct));
+  } catch (err: any) {
+    console.error('Admin get products error:', err);
+    res.status(500).json({ error: 'Failed to retrieve products.' });
+  }
 });
 
-app.delete("/api/products/:id", requireAuth, (req, res) => {
-  const index = db.products.findIndex((p: any) => p.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Product not found" });
+app.get('/api/products/:identifier', async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    let product = await prisma.product.findUnique({
+      where: { id: identifier },
+    });
 
-  const deleted = db.products.splice(index, 1);
-  saveDB();
-  res.json({ message: "Product deleted successfully", product: deleted[0] });
+    if (!product) {
+      product = await prisma.product.findUnique({
+        where: { slug: identifier },
+      });
+    }
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Record product view event
+    prisma.analyticsEvent
+      .create({
+        data: {
+          eventType: 'product_view',
+          page: `/products/${product.slug || product.id}`,
+          productId: product.id,
+        },
+      })
+      .catch(() => {});
+
+    res.json(formatProduct(product));
+  } catch (err: any) {
+    console.error('Get product by identifier error:', err);
+    res.status(500).json({ error: 'Failed to retrieve product details.' });
+  }
+});
+
+// Create product
+app.post('/api/products', requireAuth, async (req, res) => {
+  try {
+    const {
+      name,
+      slug,
+      shortDescription,
+      description,
+      category,
+      featuredImageUrl,
+      image,
+      available,
+      isFeatured,
+      ingredients,
+      benefits,
+      images,
+      variants,
+      sizes,
+      price,
+    } = req.body;
+
+    if (!name || !description || !category) {
+      return res.status(400).json({ error: 'Name, description, and category are required.' });
+    }
+
+    const generatedSlug = (slug || name)
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
+    // Ensure unique slug
+    const finalSlug = generatedSlug || `product-${Date.now()}`;
+
+    // Normalize images
+    let imagesCreate: any[] = [];
+    if (Array.isArray(images) && images.length > 0) {
+      imagesCreate = images.map((img: any, idx: number) => ({
+        imageUrl: typeof img === 'string' ? img : img.imageUrl || '',
+        storagePublicId: typeof img === 'object' && img.storagePublicId ? img.storagePublicId : '',
+        altText: typeof img === 'object' && img.altText ? img.altText : `${name} image ${idx + 1}`,
+        position: typeof img === 'object' && img.position !== undefined ? img.position : idx,
+      }));
+    } else if (featuredImageUrl || image) {
+      imagesCreate = [{
+        imageUrl: featuredImageUrl || image,
+        storagePublicId: req.body.featuredImagePublicId || '',
+        altText: `${name} primary image`,
+        position: 0
+      }];
+    }
+
+    // Normalize variants
+    let variantsCreate: any[] = [];
+    if (Array.isArray(variants) && variants.length > 0) {
+      variantsCreate = variants.map((v: any, idx: number) => ({
+        name: v.name || v.size || 'Standard',
+        size: v.size || 'Standard',
+        price: Number(v.price) || Number(price) || 0,
+        compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
+        available: v.available !== undefined ? Boolean(v.available) : true,
+        stock: v.stock !== undefined ? Number(v.stock) : 50,
+        sku: v.sku || `SKU-${Date.now()}-${idx}`,
+      }));
+    } else if (Array.isArray(sizes) && sizes.length > 0) {
+      variantsCreate = sizes.map((s: string, idx: number) => ({
+        name: s,
+        size: s,
+        price: Number(price) || 10000,
+        compareAtPrice: null,
+        available: true,
+        stock: 50,
+        sku: `SKU-${Date.now()}-${idx}`,
+      }));
+    } else {
+      variantsCreate = [
+        {
+          name: 'Standard',
+          size: '250g',
+          price: Number(price) || 10000,
+          compareAtPrice: null,
+          available: true,
+          stock: 50,
+          sku: `SKU-${Date.now()}-0`,
+        },
+      ];
+    }
+
+    const product = await prisma.product.create({
+      data: {
+        name,
+        slug: finalSlug,
+        shortDescription: shortDescription || '',
+        description,
+        category,
+        featuredImageUrl: featuredImageUrl || image || (imagesCreate[0]?.imageUrl || ''),
+        featuredImagePublicId: req.body.featuredImagePublicId || '',
+        available: available !== undefined ? Boolean(available) : true,
+        isFeatured: Boolean(isFeatured),
+        ingredients: ingredients || '',
+        benefits: benefits || '',
+        images: {
+          create: imagesCreate,
+        },
+        variants: {
+          create: variantsCreate,
+        },
+      },
+    });
+
+    res.status(201).json(formatProduct(product));
+  } catch (err: any) {
+    console.error('Create product error:', err);
+    res.status(500).json({ error: 'Failed to create product in database.' });
+  }
+});
+
+// Update product
+app.put('/api/products/:id', requireAuth, async (req, res) => {
+  try {
+    const {
+      name,
+      slug,
+      shortDescription,
+      description,
+      category,
+      featuredImageUrl,
+      featuredImagePublicId,
+      image,
+      available,
+      isFeatured,
+      ingredients,
+      benefits,
+      images,
+      variants,
+      sizes,
+      price,
+    } = req.body;
+
+    const existing = await prisma.product.findUnique({
+      where: { id: req.params.id },
+      include: { images: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Build update object
+    const newFeaturedImg = featuredImageUrl !== undefined ? featuredImageUrl : (image !== undefined ? image : existing.featuredImageUrl);
+    if (newFeaturedImg && newFeaturedImg !== existing.featuredImageUrl && existing.featuredImagePublicId) {
+      await deleteImageFile(existing.featuredImagePublicId, existing.featuredImageUrl);
+    }
+
+    const updateData: any = {
+      name: name !== undefined ? name : existing.name,
+      slug: slug !== undefined ? slug : existing.slug,
+      shortDescription: shortDescription !== undefined ? shortDescription : existing.shortDescription,
+      description: description !== undefined ? description : existing.description,
+      category: category !== undefined ? category : existing.category,
+      featuredImageUrl: newFeaturedImg,
+      featuredImagePublicId: featuredImagePublicId !== undefined ? featuredImagePublicId : existing.featuredImagePublicId,
+      available: available !== undefined ? Boolean(available) : existing.available,
+      isFeatured: isFeatured !== undefined ? Boolean(isFeatured) : existing.isFeatured,
+      ingredients: ingredients !== undefined ? ingredients : existing.ingredients,
+      benefits: benefits !== undefined ? benefits : existing.benefits,
+    };
+
+    // Update images if provided
+    if (images !== undefined) {
+      updateData.images = {
+        deleteMany: {},
+        create: Array.isArray(images)
+          ? images.map((img: any, idx: number) => ({
+              imageUrl: typeof img === 'string' ? img : img.imageUrl || '',
+              storagePublicId: typeof img === 'object' && img.storagePublicId ? img.storagePublicId : '',
+              altText: typeof img === 'object' && img.altText ? img.altText : `${updateData.name} image ${idx + 1}`,
+              position: typeof img === 'object' && img.position !== undefined ? img.position : idx,
+            }))
+          : [],
+      };
+    }
+
+    // Update variants if provided
+    if (variants !== undefined) {
+      updateData.variants = {
+        deleteMany: {},
+        create: Array.isArray(variants)
+          ? variants.map((v: any, idx: number) => ({
+              name: v.name || v.size || 'Standard',
+              size: v.size || 'Standard',
+              price: Number(v.price) || 0,
+              compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
+              available: v.available !== undefined ? Boolean(v.available) : true,
+              stock: v.stock !== undefined ? Number(v.stock) : 50,
+              sku: v.sku || `SKU-${existing.id}-${idx}`,
+            }))
+          : [],
+      };
+    } else if (sizes !== undefined) {
+      const sizesList = Array.isArray(sizes)
+        ? sizes.map((s: string) => s.trim()).filter(Boolean)
+        : typeof sizes === 'string'
+        ? sizes.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : [];
+
+      updateData.variants = {
+        deleteMany: {},
+        create: sizesList.map((s: string, idx: number) => ({
+          name: s,
+          size: s,
+          price: price !== undefined ? Number(price) : 10000,
+          compareAtPrice: null,
+          available: true,
+          stock: 50,
+          sku: `SKU-${existing.id}-${idx}`,
+        })),
+      };
+    }
+
+    const updated = await prisma.product.update({
+      where: { id: req.params.id },
+      data: updateData,
+    });
+
+    res.json(formatProduct(updated));
+  } catch (err: any) {
+    console.error('Update product error:', err);
+    res.status(500).json({ error: 'Failed to update product.' });
+  }
+});
+
+// Delete product
+app.delete('/api/products/:id', requireAuth, async (req, res) => {
+  try {
+    const existing = await prisma.product.findUnique({
+      where: { id: req.params.id },
+      include: { images: true },
+    });
+
+    if (existing) {
+      if (existing.featuredImagePublicId || existing.featuredImageUrl) {
+        await deleteImageFile(existing.featuredImagePublicId, existing.featuredImageUrl);
+      }
+      for (const img of existing.images) {
+        if (img.storagePublicId || img.imageUrl) {
+          await deleteImageFile(img.storagePublicId, img.imageUrl);
+        }
+      }
+    }
+
+    const deleted = await prisma.product.delete({
+      where: { id: req.params.id },
+    });
+
+    res.json({ message: 'Product deleted successfully', product: formatProduct(deleted) });
+  } catch (err: any) {
+    console.error('Delete product error:', err);
+    res.status(500).json({ error: 'Failed to delete product.' });
+  }
+});
+
+// Delete a specific product secondary image
+app.delete('/api/admin/products/:productId/images/:imageId', requireAuth, async (req, res) => {
+  try {
+    const { productId, imageId } = req.params;
+    const img = await prisma.productImage.findUnique({ where: { id: imageId } });
+    if (!img) {
+      return res.status(404).json({ error: 'Product image not found.' });
+    }
+    if (img.storagePublicId || img.imageUrl) {
+      await deleteImageFile(img.storagePublicId, img.imageUrl);
+    }
+    await prisma.productImage.delete({ where: { id: imageId } });
+
+    const updatedProd = await prisma.product.findUnique({
+      where: { id: productId },
+      include: { images: { orderBy: { position: 'asc' } }, variants: true },
+    });
+    res.json({ success: true, message: 'Image deleted', product: formatProduct(updatedProd) });
+  } catch (err: any) {
+    console.error('Delete product image error:', err);
+    res.status(500).json({ error: 'Failed to delete product image.' });
+  }
+});
+
+// Reorder product secondary images
+app.put('/api/admin/products/:productId/images/reorder', requireAuth, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { items } = req.body;
+    if (Array.isArray(items)) {
+      await Promise.all(
+        items.map((item: any, idx: number) =>
+          prisma.productImage.update({
+            where: { id: item.id },
+            data: { position: item.position !== undefined ? Number(item.position) : idx },
+          })
+        )
+      );
+    }
+    const updatedProd = await prisma.product.findUnique({
+      where: { id: productId },
+      include: { images: { orderBy: { position: 'asc' } }, variants: true },
+    });
+    res.json({ success: true, message: 'Image order updated', product: formatProduct(updatedProd) });
+  } catch (err: any) {
+    console.error('Reorder product images error:', err);
+    res.status(500).json({ error: 'Failed to reorder product images.' });
+  }
 });
 
 // --- ORDERS ---
-app.get("/api/orders", requireAuth, (req, res) => {
-  // Hydrate orders with product name for admin convenience
-  const hydratedOrders = db.orders.map((o: any) => {
-    const prod = db.products.find((p: any) => p.id === o.productId);
-    return {
-      ...o,
-      productName: prod ? prod.name : "Unknown Product",
-      productPrice: prod ? prod.price : 0
-    };
-  });
-  res.json(hydratedOrders);
-});
+app.get('/api/orders', requireAuth, async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      include: { product: true },
+      orderBy: { createdAt: 'desc' },
+    });
 
-app.post("/api/orders", (req, res) => {
-  const { customerName, phone, productId, quantity, size } = req.body;
-  if (!customerName || !phone || !productId || !quantity || !size) {
-    return res.status(400).json({ error: "All order fields are required." });
+    const formattedOrders = orders.map((o: any) => {
+      const prod = o.product ? formatProduct(o.product) : null;
+      return {
+        id: o.id,
+        customerName: o.customerName,
+        phone: o.phone,
+        email: o.email || '',
+        productId: o.productId,
+        productName: prod ? prod.name : 'Unknown Product',
+        productPrice: prod ? prod.price : 0,
+        quantity: o.quantity,
+        size: o.size || 'Standard',
+        status: o.status,
+        notes: o.notes || '',
+        createdAt: o.createdAt ? (typeof o.createdAt === 'string' ? o.createdAt : o.createdAt.toISOString()) : new Date().toISOString(),
+      };
+    });
+
+    res.json(formattedOrders);
+  } catch (err: any) {
+    console.error('Get orders error:', err);
+    res.status(500).json({ error: 'Failed to retrieve orders.' });
   }
-
-  const prod = db.products.find((p: any) => p.id === productId);
-  if (!prod) return res.status(404).json({ error: "Product not found" });
-
-  const newOrder = {
-    id: "ord-" + Date.now().toString().slice(-6),
-    customerName,
-    phone,
-    productId,
-    quantity: Number(quantity),
-    size,
-    status: "Pending" as const,
-    createdAt: new Date().toISOString()
-  };
-
-  db.orders.push(newOrder);
-  // Also increment analytics product interest
-  db.analytics.popularProducts[productId] = (db.analytics.popularProducts[productId] || 0) + 2;
-  saveDB();
-
-  res.status(201).json({
-    ...newOrder,
-    productName: prod.name,
-    productPrice: prod.price
-  });
 });
 
-app.put("/api/orders/:id", requireAuth, (req, res) => {
-  const index = db.orders.findIndex((o: any) => o.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Order not found" });
+app.post('/api/orders', async (req, res) => {
+  try {
+    const { customerName, phone, email, productId, quantity, size, notes } = req.body;
+    if (!customerName || !phone || !productId || !quantity) {
+      return res.status(400).json({ error: 'Customer name, phone, product, and quantity are required.' });
+    }
 
-  const { status } = req.body;
-  if (!status) return res.status(400).json({ error: "Status is required." });
+    const prod = await prisma.product.findUnique({
+      where: { id: productId },
+    });
 
-  db.orders[index].status = status;
-  saveDB();
-  res.json(db.orders[index]);
+    if (!prod) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const newOrder = await prisma.order.create({
+      data: {
+        customerName,
+        phone,
+        email: email || null,
+        productId,
+        quantity: Number(quantity),
+        size: size || 'Standard',
+        status: 'Pending',
+        notes: notes || null,
+      },
+    });
+
+    res.status(201).json({
+      id: newOrder.id,
+      customerName: newOrder.customerName,
+      phone: newOrder.phone,
+      productId: newOrder.productId,
+      productName: prod.name,
+      quantity: newOrder.quantity,
+      size: newOrder.size,
+      status: newOrder.status,
+      createdAt: newOrder.createdAt instanceof Date ? newOrder.createdAt.toISOString() : String(newOrder.createdAt),
+    });
+  } catch (err: any) {
+    console.error('Create order error:', err);
+    res.status(500).json({ error: 'Failed to save order.' });
+  }
+});
+
+app.put('/api/orders/:id', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['Pending', 'Processing', 'Completed', 'Cancelled'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid order status' });
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: req.params.id },
+      data: { status },
+    });
+
+    res.json(updated);
+  } catch (err: any) {
+    console.error('Update order status error:', err);
+    res.status(500).json({ error: 'Failed to update order status.' });
+  }
 });
 
 // --- GALLERY ---
-app.get("/api/gallery", (req, res) => {
-  res.json(db.gallery);
-});
-
-app.post("/api/gallery", requireAuth, (req, res) => {
-  const { image, category } = req.body;
-  if (!image || !category) {
-    return res.status(400).json({ error: "Image and category are required." });
+app.get('/api/gallery', async (req, res) => {
+  try {
+    const items = await prisma.galleryItem.findMany({
+      orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
+    });
+    res.json(items.map(formatGalleryItem));
+  } catch (err: any) {
+    console.error('Get gallery error:', err);
+    res.status(500).json({ error: 'Failed to retrieve gallery items.' });
   }
-
-  const newItem = {
-    id: "gal-" + Date.now(),
-    image,
-    category,
-    createdAt: new Date().toISOString()
-  };
-
-  db.gallery.push(newItem);
-  saveDB();
-  res.status(201).json(newItem);
 });
 
-app.delete("/api/gallery/:id", requireAuth, (req, res) => {
-  const index = db.gallery.findIndex((g: any) => g.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Gallery item not found" });
+app.post(['/api/gallery', '/api/admin/gallery'], requireAuth, async (req, res) => {
+  const { title, description, image, imageUrl, category, storagePublicId, altText, position, enabled } = req.body;
+  try {
+    if (!category) {
+      return res.status(400).json({ success: false, error: 'Category is required' });
+    }
 
-  const deleted = db.gallery.splice(index, 1);
-  saveDB();
-  res.json({ message: "Gallery item deleted successfully", item: deleted[0] });
+    const newItem = await prisma.galleryItem.create({
+      data: {
+        title: title || 'NITA Photo',
+        description: description || '',
+        imageUrl: image || imageUrl || '',
+        storagePublicId: storagePublicId || '',
+        altText: altText || title || '',
+        position: position !== undefined ? Number(position) : 0,
+        enabled: enabled !== undefined ? Boolean(enabled) : true,
+        category,
+      },
+    });
+
+    res.status(201).json(formatGalleryItem(newItem));
+  } catch (err: any) {
+    console.error('Create gallery item error:', err);
+    if (storagePublicId || image || imageUrl) {
+      deleteImageFile(storagePublicId, image || imageUrl).catch(() => {});
+    }
+    res.status(500).json({
+      success: false,
+      error: 'Image uploaded but database record could not be saved: ' + (err?.message || 'Database error'),
+    });
+  }
+});
+
+app.put(['/api/gallery/reorder', '/api/admin/gallery/reorder'], requireAuth, async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (Array.isArray(items)) {
+      await Promise.all(
+        items.map((item: any) =>
+          prisma.galleryItem.update({
+            where: { id: item.id },
+            data: { position: Number(item.position) },
+          })
+        )
+      );
+    }
+    res.json({ success: true, message: 'Gallery order updated' });
+  } catch (err: any) {
+    console.error('Reorder gallery items error:', err);
+    res.status(500).json({ error: 'Failed to reorder gallery items.' });
+  }
+});
+
+app.put(['/api/gallery/:id', '/api/admin/gallery/:id'], requireAuth, async (req, res) => {
+  try {
+    const { title, description, image, imageUrl, category, storagePublicId, altText, position, enabled } = req.body;
+    const existing = await prisma.galleryItem.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Gallery item not found' });
+    }
+
+    const newImg = image !== undefined ? image : imageUrl;
+    if (newImg && newImg !== existing.imageUrl && existing.storagePublicId) {
+      await deleteImageFile(existing.storagePublicId, existing.imageUrl);
+    }
+
+    const updated = await prisma.galleryItem.update({
+      where: { id: req.params.id },
+      data: {
+        title: title !== undefined ? title : existing.title,
+        description: description !== undefined ? description : existing.description,
+        imageUrl: newImg !== undefined ? newImg : existing.imageUrl,
+        category: category !== undefined ? category : existing.category,
+        storagePublicId: storagePublicId !== undefined ? storagePublicId : existing.storagePublicId,
+        altText: altText !== undefined ? altText : existing.altText,
+        position: position !== undefined ? Number(position) : existing.position,
+        enabled: enabled !== undefined ? Boolean(enabled) : existing.enabled,
+      },
+    });
+
+    res.json(formatGalleryItem(updated));
+  } catch (err: any) {
+    console.error('Update gallery item error:', err);
+    res.status(500).json({ error: 'Failed to update gallery item.' });
+  }
+});
+
+app.delete(['/api/gallery/:id', '/api/admin/gallery/:id'], requireAuth, async (req, res) => {
+  try {
+    const existing = await prisma.galleryItem.findUnique({ where: { id: req.params.id } });
+    if (existing && (existing.storagePublicId || existing.imageUrl)) {
+      await deleteImageFile(existing.storagePublicId, existing.imageUrl);
+    }
+
+    const deleted = await prisma.galleryItem.delete({
+      where: { id: req.params.id },
+    });
+    res.json({ message: 'Gallery item deleted', item: formatGalleryItem(deleted) });
+  } catch (err: any) {
+    console.error('Delete gallery item error:', err);
+    res.status(500).json({ error: 'Failed to delete gallery item.' });
+  }
+});
+
+// --- IMAGE STORAGE (Admin upload and delete endpoints) ---
+app.get('/api/admin/images/status', requireAuth, (req, res) => {
+  const configured = isCloudinaryConfigured();
+  res.json({
+    success: true,
+    configured,
+    provider: configured ? 'cloudinary' : 'local',
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || null,
+  });
+});
+
+// Explicit handler for non-POST requests to /api/admin/images/upload
+app.all('/api/admin/images/upload', (req, res, next) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({
+      success: false,
+      error: `HTTP ${req.method} is not supported on /api/admin/images/upload. Use POST.`,
+    });
+  }
+  next();
+});
+
+app.post('/api/admin/images/upload', requireAuth, (req, res, next) => {
+  upload.single('image')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, error: 'File is too large. Maximum allowed size is 10 MB.' });
+      }
+      return res.status(400).json({ success: false, error: err.message });
+    } else if (err) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next();
+  });
+}, async (req: any, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image file uploaded.' });
+    }
+
+    const category = req.body.category || 'general';
+    const result = await uploadImageFile(
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype,
+      category
+    );
+
+    res.json({
+      success: true,
+      imageUrl: result.imageUrl,
+      publicId: result.publicId,
+      provider: result.provider,
+    });
+  } catch (err: any) {
+    console.error('Upload image error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Image upload failed.' });
+  }
+});
+
+app.post('/api/admin/images/delete', requireAuth, async (req, res) => {
+  try {
+    const { publicId, imageUrl } = req.body;
+    if (!publicId && !imageUrl) {
+      return res.status(400).json({ success: false, error: 'publicId or imageUrl is required' });
+    }
+
+    await deleteImageFile(publicId, imageUrl);
+    res.json({ success: true, message: 'Image removed from storage.' });
+  } catch (err: any) {
+    console.error('Delete image storage error:', err);
+    res.status(500).json({ success: false, error: 'Failed to delete image.' });
+  }
+});
+
+// --- SITE IMAGES (Production, Factory, Quality & Certifications) ---
+app.get('/api/site-images', async (req, res) => {
+  try {
+    const { section } = req.query;
+    const where: any = { enabled: true };
+    if (section && typeof section === 'string') {
+      where.section = section.toUpperCase();
+    }
+    const items = await prisma.siteImage.findMany({
+      where,
+      orderBy: { position: 'asc' },
+    });
+    res.json(items);
+  } catch (err: any) {
+    console.error('Get site images error:', err);
+    res.status(500).json({ error: 'Failed to retrieve site images.', details: err?.message });
+  }
+});
+
+app.get('/api/admin/site-images', requireAuth, async (req, res) => {
+  try {
+    const { section } = req.query;
+    const where: any = {};
+    if (section && typeof section === 'string') {
+      where.section = section.toUpperCase();
+    }
+    const items = await prisma.siteImage.findMany({
+      where,
+      orderBy: { position: 'asc' },
+    });
+    res.json(items);
+  } catch (err: any) {
+    console.error('Get admin site images error:', err);
+    res.status(500).json({ error: 'Failed to retrieve site images.' });
+  }
+});
+
+app.post('/api/admin/site-images', requireAuth, async (req, res) => {
+  const { section, imageUrl, storagePublicId, altText, title, position, enabled } = req.body;
+  try {
+    if (!section || !imageUrl) {
+      return res.status(400).json({ success: false, error: 'section and imageUrl are required.' });
+    }
+
+    const newItem = await prisma.siteImage.create({
+      data: {
+        section: section.toUpperCase(),
+        imageUrl,
+        storagePublicId: storagePublicId || '',
+        altText: altText || '',
+        title: title || '',
+        position: position !== undefined ? Number(position) : 0,
+        enabled: enabled !== undefined ? Boolean(enabled) : true,
+      },
+    });
+
+    res.status(201).json(newItem);
+  } catch (err: any) {
+    console.error('Create site image error:', err);
+    if (storagePublicId || imageUrl) {
+      deleteImageFile(storagePublicId, imageUrl).catch(() => {});
+    }
+    res.status(500).json({
+      success: false,
+      error: 'Image uploaded but database record could not be saved: ' + (err?.message || 'Database error'),
+    });
+  }
+});
+
+app.put('/api/admin/site-images/:id', requireAuth, async (req, res) => {
+  try {
+    const { section, imageUrl, storagePublicId, altText, title, position, enabled } = req.body;
+    const existing = await prisma.siteImage.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Site image not found' });
+    }
+
+    // Clean up old remote asset if image URL was replaced
+    if (imageUrl && imageUrl !== existing.imageUrl && existing.storagePublicId) {
+      await deleteImageFile(existing.storagePublicId, existing.imageUrl);
+    }
+
+    const updated = await prisma.siteImage.update({
+      where: { id: req.params.id },
+      data: {
+        section: section ? section.toUpperCase() : existing.section,
+        imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
+        storagePublicId: storagePublicId !== undefined ? storagePublicId : existing.storagePublicId,
+        altText: altText !== undefined ? altText : existing.altText,
+        title: title !== undefined ? title : existing.title,
+        position: position !== undefined ? Number(position) : existing.position,
+        enabled: enabled !== undefined ? Boolean(enabled) : existing.enabled,
+      },
+    });
+
+    res.json(updated);
+  } catch (err: any) {
+    console.error('Update site image error:', err);
+    res.status(500).json({ error: 'Failed to update site image.' });
+  }
+});
+
+app.delete('/api/admin/site-images/:id', requireAuth, async (req, res) => {
+  try {
+    const existing = await prisma.siteImage.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Site image not found' });
+    }
+
+    if (existing.storagePublicId || existing.imageUrl) {
+      await deleteImageFile(existing.storagePublicId, existing.imageUrl);
+    }
+
+    await prisma.siteImage.delete({ where: { id: req.params.id } });
+    res.json({ success: true, message: 'Site image deleted successfully.' });
+  } catch (err: any) {
+    console.error('Delete site image error:', err);
+    res.status(500).json({ error: 'Failed to delete site image.' });
+  }
+});
+
+app.put('/api/admin/site-images/reorder', requireAuth, async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (Array.isArray(items)) {
+      await Promise.all(
+        items.map((item: any) =>
+          prisma.siteImage.update({
+            where: { id: item.id },
+            data: { position: Number(item.position) },
+          })
+        )
+      );
+    }
+    res.json({ success: true, message: 'Order updated' });
+  } catch (err: any) {
+    console.error('Reorder site images error:', err);
+    res.status(500).json({ error: 'Failed to reorder site images.' });
+  }
 });
 
 // --- MESSAGES ---
-app.get("/api/messages", requireAuth, (req, res) => {
-  res.json(db.messages);
-});
-
-app.post("/api/messages", (req, res) => {
-  const { name, email, phone, message } = req.body;
-  if (!name || !email || !message) {
-    return res.status(400).json({ error: "Name, email, and message are required." });
+app.get('/api/messages', requireAuth, async (req, res) => {
+  try {
+    const messages = await prisma.message.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(messages);
+  } catch (err: any) {
+    console.error('Get messages error:', err);
+    res.status(500).json({ error: 'Failed to retrieve messages.' });
   }
+});
 
-  const newMessage = {
-    id: "msg-" + Date.now(),
-    name,
-    email,
-    phone: phone || "",
-    message,
-    createdAt: new Date().toISOString()
-  };
+app.post('/api/messages', async (req, res) => {
+  try {
+    const { name, email, phone, subject, message } = req.body;
+    if (!name || !email || !message) {
+      return res.status(400).json({ error: 'Name, email, and message are required.' });
+    }
 
-  db.messages.push(newMessage);
-  saveDB();
-  res.status(201).json(newMessage);
+    const newMessage = await prisma.message.create({
+      data: {
+        name,
+        email,
+        phone: phone || '',
+        subject: subject || 'Website Contact Form',
+        message,
+        status: 'New',
+      },
+    });
+
+    res.status(201).json(newMessage);
+  } catch (err: any) {
+    console.error('Create message error:', err);
+    res.status(500).json({ error: 'Failed to send message.' });
+  }
 });
 
 // ==========================================
-// VITE OR STATIC SERVING MIDDLEWARE
+// NEVER RETURN index.html FOR /api/*
 // ==========================================
+// 1. Explicit catch-all for any unhandled /api/* route: ALWAYS return JSON 404
+app.all('/api/*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: `API endpoint not found: ${req.method} ${req.originalUrl || req.url}`,
+  });
+});
 
-async function start() {
-  if (process.env.NODE_ENV !== "production") {
+// 2. Centralized error handler for all /api requests: ALWAYS return JSON
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.path.startsWith('/api') || req.originalUrl?.startsWith('/api')) {
+    console.error('[Centralized API Error]:', err);
+    return res.status(err.status || err.statusCode || 500).json({
+      success: false,
+      error: err.message || 'Internal server error occurred.',
+    });
+  }
+  next(err);
+});
+
+// --- INITIALIZE SERVER ---
+async function startServer() {
+  await ensureAdminExists();
+  await ensureDefaultSiteImages();
+  validateCloudinaryConfig();
+
+  if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { 
-        middlewareMode: true,
-        watch: {
-          ignored: ["**/db.json", "**/db.json*"]
-        }
-      },
-      appType: "spa"
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    // Explicit guard before Vite middleware: ensure /api requests never hit Vite HTML fallback
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api') || req.url.startsWith('/api')) {
+        return res.status(404).json({
+          success: false,
+          error: `API endpoint not found: ${req.method} ${req.url}`,
+        });
+      }
+      next();
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get('*', (req, res) => {
+      // Never return index.html for API routes in production
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({
+          success: false,
+          error: `API endpoint not found: ${req.method} ${req.url}`,
+        });
+      }
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[NITA Food Backend Server] Running on http://localhost:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Server] NITA Foods running on http://localhost:${PORT}`);
   });
 }
 
-start();
+startServer();

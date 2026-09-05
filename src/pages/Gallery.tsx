@@ -34,7 +34,10 @@ export default function Gallery() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filteredItems = items.filter((item) => {
+  // Only show items that have an actual uploaded photo
+  const itemsWithImages = items.filter((item) => Boolean(item.image && item.image.trim() !== ''));
+
+  const filteredItems = itemsWithImages.filter((item) => {
     if (activeCategory === 'All') return true;
     return item.category === activeCategory;
   });
@@ -92,9 +95,10 @@ export default function Gallery() {
             <p className="text-sm text-gray-500 font-medium">Loading high-resolution visuals...</p>
           </div>
         ) : filteredItems.length === 0 ? (
-          <div className="py-24 text-center bg-gray-50 rounded-3xl border border-dashed border-gray-200">
-            <ImageIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-400 font-medium text-sm">No photos found in this category currently.</p>
+          <div className="py-24 text-center bg-gray-50/80 rounded-3xl border border-dashed border-gray-200">
+            <ImageIcon className="w-12 h-12 text-emerald-800/30 mx-auto mb-3" />
+            <h4 className="text-gray-700 font-bold text-sm">No photos uploaded in this category yet</h4>
+            <p className="text-gray-400 font-medium text-xs mt-1">Photos uploaded through the Admin Dashboard will appear here automatically.</p>
           </div>
         ) : (
           /* Bento-grid inspired layout */

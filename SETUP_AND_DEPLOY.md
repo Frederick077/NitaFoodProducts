@@ -1,151 +1,129 @@
-# NITA FOOD PRODUCTS - Setup and Deployment Guide
+# NITA FOOD PRODUCTS - Setup, Migration & Deployment Guide
 
-This document outlines the system architecture, database design, setup instructions, and deployment guidelines for the complete full-stack website of **NITA FOOD PRODUCTS** (Tanzania).
+This document outlines the system architecture, PostgreSQL database design, Prisma ORM setup, local run commands, and cloud deployment guidelines for **NITA FOOD PRODUCTS** (Tanzania).
 
 ---
 
 ## 1. System Architecture
 
-The application is built on a robust full-stack architecture matching the exact specifications of premium commercial portals:
+The application is built on a modern full-stack TypeScript architecture:
 
-- **Frontend**: Single Page Application (SPA) built using React.js, TypeScript, Tailwind CSS, Framer Motion, and React Router v6.
-- **Backend**: Node.js and Express.js REST API server serving endpoints for content retrieval, authentication, and order recording.
-- **Database Model**: Self-healing, persistent SQL-like relational schema, pre-seeded with premium Tanzanian seed and snack lines.
-- **Authentication**: Native HMAC-SHA256 authenticated Bearer tokens with distinct staff roles (`Admin` and `Manager`).
+- **Frontend**: Single Page Application (SPA) built with React 19, TypeScript, Tailwind CSS, Framer Motion, and React Router.
+- **Backend**: Express REST API integrated with Vite middleware for fast development and high-performance standalone CommonJS production bundle (`dist/server.cjs`).
+- **Database & ORM**: PostgreSQL database managed through Prisma ORM (`@prisma/client`).
+- **Authentication**: Secure bcrypt-hashed passwords and HMAC-SHA256 JWT tokens. Only one role exists: **`Admin`**. (Manager role has been completely removed).
 
 ---
 
-## 2. Database Schema (MySQL Definition)
+## 2. Environment Configuration
 
-If migrating from the built-in persistent storage to a standalone MySQL instance in production, execute the following SQL schema statements to instantiate the tables:
+Create a `.env` file in the root directory and configure the following variables:
 
-```sql
--- 1. Users Table
-CREATE TABLE IF NOT EXISTS users (
-  id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  email VARCHAR(100) UNIQUE NOT NULL,
-  password VARCHAR(255) NOT NULL, -- SHA-256 Hashed password
-  role ENUM('Admin', 'Manager') NOT NULL DEFAULT 'Manager',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+```env
+# PostgreSQL Database Connection URL (e.g. Supabase, Neon, Railway, Local)
+DATABASE_URL="postgresql://postgres:password@localhost:5432/nita_db?schema=public"
 
--- 2. Products Table
-CREATE TABLE IF NOT EXISTS products (
-  id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(150) NOT NULL,
-  description TEXT NOT NULL,
-  category VARCHAR(100) NOT NULL,
-  price DECIMAL(10, 2) NOT NULL, -- in TZS
-  image VARCHAR(255) DEFAULT NULL,
-  sizes TEXT NOT NULL, -- Stored as comma-separated values (e.g. '150g, 250g, 500g')
-  ingredients TEXT DEFAULT NULL,
-  benefits TEXT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+# JSON Web Token Secret for Admin Authentication
+JWT_SECRET="nita-food-secure-jwt-secret-key-2026"
 
--- 3. Orders Table
-CREATE TABLE IF NOT EXISTS orders (
-  id VARCHAR(50) PRIMARY KEY,
-  customer_name VARCHAR(150) NOT NULL,
-  phone VARCHAR(50) NOT NULL,
-  product_id VARCHAR(50) NOT NULL,
-  quantity INT NOT NULL DEFAULT 1,
-  size VARCHAR(30) NOT NULL,
-  status ENUM('Pending', 'Processing', 'Completed', 'Cancelled') NOT NULL DEFAULT 'Pending',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-);
+# Initial Admin Credentials (used during seed or first boot)
+ADMIN_INITIAL_EMAIL="admin@nitafoods.local"
+ADMIN_INITIAL_PASSWORD="change-this-before-production"
 
--- 4. Gallery Table
-CREATE TABLE IF NOT EXISTS gallery (
-  id VARCHAR(50) PRIMARY KEY,
-  image TEXT NOT NULL,
-  category ENUM('Products', 'Packaging', 'Production Process', 'Company Events', 'Customers') NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 5. Messages Table
-CREATE TABLE IF NOT EXISTS messages (
-  id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(150) NOT NULL,
-  email VARCHAR(100) NOT NULL,
-  phone VARCHAR(50) DEFAULT NULL,
-  message TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+# Application URL
+APP_URL="http://localhost:3000"
 ```
 
 ---
 
-## 3. Local Development Setup
+## 3. Local Development Setup & Database Migration Commands
 
-To run the full-stack application on your computer:
+### Step 1: Install Dependencies
+```bash
+npm install
+```
 
-### Prerequisites
-- Node.js (v18 or higher)
-- npm or yarn
+### Step 2: Generate Prisma Client
+```bash
+npx prisma generate
+```
+*(On Windows PowerShell if `npx` script execution is restricted, run: `npx.cmd prisma generate`)*
 
-### Steps:
-1. **Clone or Extract Files**: Ensure all files are placed in the target project folder.
-2. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
-3. **Configure Environment Variables**:
-   Create a `.env` file in the root directory and copy variables from `.env.example`:
-   ```env
-   GEMINI_API_KEY="your-gemini-key"
-   APP_URL="http://localhost:3000"
-   ```
-4. **Boot Development Server**:
-   The development server is configured with `tsx` to run both the Express backend API and the Vite React frontend on a unified local port (`3000`):
-   ```bash
-   npm run dev
-   ```
-5. **Access Application**:
-   Open [http://localhost:3000](http://localhost:3000) in your web browser.
+### Step 3: Run Database Migrations
+Create and apply initial PostgreSQL tables:
+```bash
+npx prisma migrate dev --name init_postgresql
+```
+*(Windows PowerShell: `npx.cmd prisma migrate dev --name init_postgresql`)*
 
----
+### Step 4: Seed Database
+Populates the database with the initial single Admin account and catalog:
+```bash
+npx prisma db seed
+```
+*(Windows PowerShell: `npx.cmd prisma db seed`)*
 
-## 4. Admin Portal Credentials
+### Step 5: Start Development Server
+```bash
+npm run dev
+```
 
-The application boots pre-seeded with two staff accounts for immediate evaluation:
-
-1. **Role: Admin** (Full access, including product creation, editing, status change, and destructive deletion)
-   - **Email**: `admin@nitafoods.co.tz`
-   - **Password**: `nita2026`
-   
-2. **Role: Manager** (Read-only on stats, can update order status, but cannot delete products or delete gallery images)
-   - **Email**: `manager@nitafoods.co.tz`
-   - **Password**: `nita2026`
+Open [http://localhost:3000](http://localhost:3000) in your web browser.
 
 ---
 
-## 5. Deployment Instructions
+## 4. Admin Portal Access
 
-### A. Deploying Frontend to Vercel (SPA mode)
-To deploy the client application as a standalone static SPA on Vercel:
-1. Push your code to a GitHub repository.
-2. Connect your repository to Vercel.
-3. Set the following build options:
-   - **Framework Preset**: Vite
-   - **Build Command**: `npm run build` (or `vite build`)
-   - **Output Directory**: `dist`
-4. Add the following rule to `vercel.json` in the root folder to handle React Router client-side routing redirects:
-   ```json
-   {
-     "rewrites": [
-       { "source": "/(.*)", "destination": "/index.html" }
-     ]
-   }
+The public website does not display an Admin login button in the navbar. Access the portal directly via:
+- URL: **`http://localhost:3000/admin`** or **`http://localhost:3000/admin/login`**
+- **Default Email**: `admin@nitafoods.local` (or whatever configured in `.env`)
+- **Default Password**: `admin123` (or whatever configured in `.env`)
+
+The Admin has full privileges:
+- Adding, editing, and deleting products
+- Managing product sizes & image URLs
+- Managing gallery items & categories
+- Viewing incoming customer orders & updating order status
+- Reading contact messages & inquiries
+- Real-time website and product view analytics
+
+---
+
+## 5. Useful Prisma Commands
+
+- **Open Prisma Studio (Visual DB GUI)**:
+  ```bash
+  npx prisma studio
+  # or on Windows: npx.cmd prisma studio
+  ```
+- **Update Schema Changes**:
+  ```bash
+  npx prisma migrate dev
+  # or on Windows: npx.cmd prisma migrate dev
+  ```
+- **Reset Database**:
+  ```bash
+  npx prisma migrate reset
+  # or on Windows: npx.cmd prisma migrate reset
+  ```
+
+---
+
+## 6. Deployment Instructions (Vercel / Railway / Render)
+
+### A. Deploying to Vercel
+1. Set the following Environment Variables in the Vercel Project Settings:
+   - `DATABASE_URL` = Your hosted PostgreSQL connection string (from Supabase, Neon, or Railway)
+   - `JWT_SECRET` = A strong secret random string
+   - `ADMIN_INITIAL_EMAIL` = Your production admin email
+   - `ADMIN_INITIAL_PASSWORD` = Your production admin password
+2. Add Build Command:
+   ```bash
+   prisma generate && npm run build
    ```
+3. After deployment, run `npx prisma migrate deploy` and `npx prisma db seed` against your production database.
 
-### B. Deploying Full-Stack to Render or Railway (Docker or Node Node)
-For deployment-ready execution hosting the Node/Express backend alongside the frontend:
-1. **On Render / Railway**:
-   - Create a new **Web Service**.
-   - Set **Build Command**: `npm run build` (runs `vite build` and bundles `server.ts` into `dist/server.cjs` via `esbuild`).
-   - Set **Start Command**: `npm run start` (starts compiled fast server using `node dist/server.cjs`).
-2. **Environment Variables**:
-   Define `NODE_ENV=production` in the cloud provider's setting dashboard.
+### B. Deploying to Railway / Render (Full-Stack Container or Node Service)
+- **Build Command**: `npm run prisma:generate && npm run build`
+- **Start Command**: `npm run start`
+- Provide `DATABASE_URL` and `JWT_SECRET`.

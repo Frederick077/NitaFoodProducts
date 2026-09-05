@@ -1,11 +1,18 @@
+import { siteSettings } from './config/siteSettings';
+
 // Tanzanian Shilling Formatter
 export function formatTZS(amount: number): string {
-  return new Intl.NumberFormat('en-TZ', {
-    style: 'currency',
-    currency: 'TZS',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(amount).replace('TZS', '').trim() + ' TZS';
+  return (
+    new Intl.NumberFormat('en-TZ', {
+      style: 'currency',
+      currency: 'TZS',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    })
+      .format(amount)
+      .replace('TZS', '')
+      .trim() + ' TZS'
+  );
 }
 
 // Track page view in Express analytics backend
@@ -14,21 +21,38 @@ export async function trackPageView(path: string) {
     await fetch('/api/analytics/visit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path })
+      body: JSON.stringify({ path }),
     });
   } catch (err) {
     console.warn('Analytics tracking error:', err);
   }
 }
 
-// Generate the WhatsApp link for direct ordering
-export function getWhatsAppLink(productName: string, quantity: number, size: string) {
-  const baseText = `Hello NITA FOOD PRODUCTS, I would like to order your products.`;
-  const productDetails = `\n\nOrder Details:\nProduct: ${productName}\nQuantity: ${quantity}\nPack Size: ${size}`;
-  const encodedText = encodeURIComponent(baseText + productDetails);
-  
-  // Tanzanian contact number format - usually starts with +255
-  // We can use a standard placeholder or customizable number
-  const phoneNumber = "255712345678"; 
-  return `https://wa.me/${phoneNumber}?text=${encodedText}`;
+// Generate context-aware or general WhatsApp link
+export function getWhatsAppLink(productName?: string, quantity?: number, size?: string): string {
+  const phoneNumber = siteSettings.whatsappNumber;
+
+  if (productName) {
+    let msg = `Hello NITA FOOD PRODUCTS,\n\nI am interested in ${productName}.`;
+    if (size && size !== 'Standard') {
+      msg += `\nSize: ${size}`;
+    }
+    if (quantity && quantity > 1) {
+      msg += `\nQuantity: ${quantity}`;
+    }
+    return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(msg)}`;
+  }
+
+  // General default message
+  const defaultMsg = `Hello NITA FOOD PRODUCTS, I would like to know more about your products.`;
+  return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(defaultMsg)}`;
+}
+
+// Helper for slugifying category names for clean URLs
+export function slugifyCategory(category: string): string {
+  return category
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
 }

@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
+import FloatingWhatsApp from './components/FloatingWhatsApp';
 
 // Pages
 import Home from './pages/Home';
@@ -16,6 +17,7 @@ import ProductDetails from './pages/ProductDetails';
 import Gallery from './pages/Gallery';
 import Quality from './pages/Quality';
 import Contact from './pages/Contact';
+import Explore from './pages/Explore';
 import AdminDashboard from './pages/AdminDashboard';
 
 // Helper component to auto-scroll to top on route change
@@ -31,11 +33,11 @@ function ScrollToTop() {
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('nita_admin_token'));
-  const [userRole, setUserRole] = useState<'Admin' | 'Manager' | null>(
-    localStorage.getItem('nita_admin_role') as 'Admin' | 'Manager' | null
+  const [userRole, setUserRole] = useState<'Admin' | null>(
+    localStorage.getItem('nita_admin_role') as 'Admin' | null
   );
 
-  const handleLoginSuccess = (newToken: string, user: { name: string; email: string; role: 'Admin' | 'Manager' }) => {
+  const handleLoginSuccess = (newToken: string, user: { name: string; email: string; role: 'Admin' }) => {
     setToken(newToken);
     setUserRole(user.role);
     localStorage.setItem('nita_admin_token', newToken);
@@ -67,6 +69,11 @@ export default function App() {
             <Route path="/products/:id" element={<ProductDetails />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/quality" element={<Quality />} />
+            <Route path="/explore" element={<Explore />} />
+            <Route path="/explore/recipes" element={<Explore />} />
+            <Route path="/explore/news" element={<Explore />} />
+            <Route path="/explore/faqs" element={<Explore />} />
+            <Route path="/explore/stockists" element={<Explore />} />
             <Route path="/contact" element={<Contact />} />
             <Route 
               path="/admin" 
@@ -78,8 +85,21 @@ export default function App() {
                 />
               } 
             />
+            <Route 
+              path="/admin/login" 
+              element={
+                <AdminDashboard 
+                  token={token} 
+                  onLoginSuccess={handleLoginSuccess} 
+                  userRole={userRole} 
+                />
+              } 
+            />
           </Routes>
         </main>
+
+        {/* Floating WhatsApp Action Button */}
+        <FloatingWhatsApp />
 
         {/* Global Footer */}
         <Footer />

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
 import { useCart } from '../context/CartContext';
@@ -110,3 +110,5 @@ function OpenCartModal() {
     </dialog>
   );
 }
+
+

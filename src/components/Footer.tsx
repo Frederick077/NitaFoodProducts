@@ -11,7 +11,7 @@ export default function Footer() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
-
+          
           {/* Brand Presentation */}
           <div className="space-y-6">
             <Link to="/" className="flex items-center space-x-2" id="footer-logo">
@@ -32,17 +32,17 @@ export default function Footer() {
               We produce and supply premium natural food products across Tanzania and the globe, promoting hygiene and nutritional excellence.
             </p>
             <div className="flex space-x-3">
-              <a
-                href="https://instagram.com/nitafoodproducts"
-                target="_blank"
+              <a 
+                href="https://instagram.com/nitafoodproducts" 
+                target="_blank" 
                 rel="noreferrer"
                 className="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-900/80 hover:bg-orange-500 hover:text-white text-emerald-200 transition-all duration-300 shadow-inner"
                 title="Follow us on Instagram"
               >
                 <Instagram className="w-5 h-5" />
               </a>
-              <a
-                href="#whatsapp-link"
+              <a 
+                href="#whatsapp-link" 
                 className="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-900/80 hover:bg-orange-500 hover:text-white text-emerald-200 transition-all duration-300 shadow-inner"
               >
                 <Globe className="w-5 h-5" />
@@ -151,7 +151,7 @@ export default function Footer() {
             &copy; {currentYear} NITA FOOD PRODUCTS. All Rights Reserved.
           </p>
           <p className="flex items-center gap-1">
-
+           
           </p>
         </div>
       </div>

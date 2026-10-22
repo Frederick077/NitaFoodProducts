@@ -178,7 +178,7 @@ class InMemoryDB {
     for (const p of defaultProducts) {
       const { images, variants, ...prodData } = p;
       this.products.push(prodData);
-
+      
       images.forEach((img, idx) => {
         this.productImages.push({
           id: `img-${p.id}-${idx}`,
@@ -208,8 +208,8 @@ class InMemoryDB {
     }
 
     const categories = [
-      'Products', 'Products', 'Packaging', 'Packaging',
-      'Production Process', 'Production Process', 'Company Events', 'Company Events',
+      'Products', 'Products', 'Packaging', 'Packaging', 
+      'Production Process', 'Production Process', 'Company Events', 'Company Events', 
       'Customers', 'Customers'
     ];
     categories.forEach((cat, idx) => {
@@ -297,11 +297,11 @@ export const prisma: any = {
     },
     findMany: async (args?: any) => {
       if (realPrisma) {
-        try {
+        try { 
           return await realPrisma.product.findMany({
             ...args,
             include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
-          });
+          }); 
         } catch (e) { throw e; }
       }
       let prods = [...memDB.products];
@@ -328,11 +328,11 @@ export const prisma: any = {
     },
     findUnique: async ({ where }: any) => {
       if (realPrisma) {
-        try {
-          return await realPrisma.product.findUnique({
-            where,
-            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
-          });
+        try { 
+          return await realPrisma.product.findUnique({ 
+            where, 
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } } 
+          }); 
         } catch (e) { throw e; }
       }
       const p = memDB.products.find((prod) => prod.id === where.id || prod.slug === where.slug);
@@ -347,11 +347,11 @@ export const prisma: any = {
     },
     findFirst: async ({ where }: any) => {
       if (realPrisma) {
-        try {
-          return await realPrisma.product.findFirst({
-            where,
-            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
-          });
+        try { 
+          return await realPrisma.product.findFirst({ 
+            where, 
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } } 
+          }); 
         } catch (e) { throw e; }
       }
       const p = memDB.products.find((prod) => {
@@ -371,11 +371,11 @@ export const prisma: any = {
     create: async ({ data }: any) => {
       requireDatabase();
       if (realPrisma) {
-        try {
-          return await realPrisma.product.create({
-            data,
-            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
-          });
+        try { 
+          return await realPrisma.product.create({ 
+            data, 
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } } 
+          }); 
         } catch (e) { throw e; }
       }
       const newId = data.id || `prod-${Date.now()}`;
@@ -439,12 +439,12 @@ export const prisma: any = {
     update: async ({ where, data }: any) => {
       requireDatabase();
       if (realPrisma) {
-        try {
-          return await realPrisma.product.update({
-            where,
-            data,
-            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
-          });
+        try { 
+          return await realPrisma.product.update({ 
+            where, 
+            data, 
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } } 
+          }); 
         } catch (e) { throw e; }
       }
       const p = memDB.products.find((prod) => prod.id === where.id);

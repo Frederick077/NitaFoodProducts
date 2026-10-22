@@ -2,15 +2,15 @@ import { variantLabel } from '../variantLabel';
 ﻿import { useCart } from '../context/CartContext';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import {
-  ArrowLeft,
-  CheckCircle,
-  ListPlus,
-  Heart,
-  Award,
-  ShieldAlert,
-  ShoppingCart,
-  MessageSquare,
+import { 
+  ArrowLeft, 
+  CheckCircle, 
+  ListPlus, 
+  Heart, 
+  Award, 
+  ShieldAlert, 
+  ShoppingCart, 
+  MessageSquare, 
   Sparkles,
   Layers,
   ChevronRight,
@@ -53,7 +53,7 @@ export default function ProductDetails() {
         setCartFeedback('');
         setSelectedVariantId('');
         setSelectedImageIndex(0);
-
+        
         // Select first available variant or first variant
         if (data.variants && data.variants.length > 0) {
           const firstAvailable = data.variants.find((v) => v.available && v.stock > 0) || data.variants[0];
@@ -139,7 +139,7 @@ export default function ProductDetails() {
   return (
     <div className="bg-slate-50/50 min-h-screen py-10 sm:py-16 px-4 md:px-8" id="product-detail-view">
       <div className="max-w-6xl mx-auto space-y-10">
-
+        
         {/* Navigation breadcrumb bar */}
         <div className="flex flex-wrap items-center justify-between gap-4 text-xs">
           <nav className="flex items-center space-x-2 text-gray-500 font-medium">
@@ -157,7 +157,7 @@ export default function ProductDetails() {
 
         {/* Main Product Display Card */}
         <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 p-6 sm:p-10">
-
+          
           {/* Left Column: Image Gallery */}
           <div className="lg:col-span-6 space-y-4">
             {/* Main Primary Image */}
@@ -218,7 +218,7 @@ export default function ProductDetails() {
 
           {/* Right Column: Product Info & Purchase Controls */}
           <div className="lg:col-span-6 space-y-6 text-left flex flex-col justify-between">
-
+            
             {/* Header info */}
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-2">
@@ -434,3 +434,4 @@ export default function ProductDetails() {
     </div>
   );
 }
+

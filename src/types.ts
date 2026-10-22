@@ -30,7 +30,13 @@ export interface ProductVariant {
   updatedAt?: string;
 }
 
+export interface Category {
+  id: string; name: string; slug: string; createdAt: string; updatedAt: string;
+  _count?: { products: number };
+}
+
 export interface Product {
+  categoryId: string;
   id: string;
   name: string;
   slug: string;
@@ -54,7 +60,17 @@ export interface Product {
   updatedAt?: string;
 }
 
+export interface OrderItem {
+  id: string; productId?: string | null; variantId?: string | null;
+  productName: string; variantName: string; imageUrl: string;
+  unitPrice: string | number | null; quantity: number; subtotal: string | number | null;
+}
 export interface Order {
+  orderNumber?: string | null;
+  address?: string | null;
+  items: OrderItem[];
+  subtotal: string | number | null;
+  total: string | number | null;
   id: string;
   customerName: string;
   phone: string;

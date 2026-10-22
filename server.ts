@@ -1,10 +1,14 @@
-import express from 'express';
+import { categoryRoutes } from './src/server/categories';
+import { buildVariantUpdate } from './src/server/productVariants';
+﻿import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
-import { prisma } from './src/lib/prisma';
+import { prisma, requireDatabase } from './src/lib/prisma';
+import { createCheckout, CheckoutError } from './src/server/checkout';
+import { Prisma } from '@prisma/client';
 import { uploadImageFile, deleteImageFile, isCloudinaryConfigured, validateCloudinaryConfig } from './src/server/imageStorage';
 
 const app = express();
@@ -138,8 +142,8 @@ function formatProduct(p: any) {
   const variants = (p.variants || []).map((v: any) => ({
     id: v.id,
     productId: v.productId,
-    name: v.name || v.size || 'Standard',
-    size: v.size || 'Standard',
+    name: v.name || '',
+    size: v.size || '',
     price: Number(v.price) || 0,
     compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
     available: v.available !== undefined ? Boolean(v.available) : true,
@@ -172,7 +176,8 @@ function formatProduct(p: any) {
     slug: p.slug || p.id,
     shortDescription: p.shortDescription || '',
     description: p.description || '',
-    category: p.category || 'Seeds & Nuts',
+    category: typeof p.category === 'string' ? p.category : p.category?.name || '',
+    categoryId: p.categoryId,
     featuredImageUrl: primaryImage,
     featuredImagePublicId: p.featuredImagePublicId || '',
     available: p.available !== undefined ? Boolean(p.available) : true,
@@ -284,8 +289,8 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
         take: 2000,
       }),
       prisma.product.findMany(),
-      prisma.order.findMany({
-        include: { product: true },
+      requireDatabase().order.findMany({
+        include: { items: true },
         orderBy: { createdAt: 'desc' },
       }),
     ]);
@@ -302,13 +307,7 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
       }
     });
 
-    let totalSales = 0;
-    orders.forEach((o: any) => {
-      if (o.status === 'Completed' && o.product) {
-        const prod = formatProduct(o.product);
-        totalSales += prod.price * o.quantity;
-      }
-    });
+    const totalSales = orders.filter(o => o.status === 'Completed').reduce((sum, o) => sum + Number(o.total || 0), 0);
 
     res.json({
       visitors: events.length || 1,
@@ -317,24 +316,15 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
       totalProducts: products.length,
       totalOrders: orders.length,
       totalSales,
-      orders: orders.map((o: any) => ({
-        id: o.id,
-        customerName: o.customerName,
-        phone: o.phone,
-        productId: o.productId,
-        productName: o.product?.name || 'Unknown Product',
-        productPrice: o.product ? formatProduct(o.product).price : 0,
-        quantity: o.quantity,
-        size: o.size || 'Standard',
-        status: o.status,
-        createdAt: o.createdAt ? (typeof o.createdAt === 'string' ? o.createdAt : o.createdAt.toISOString()) : new Date().toISOString(),
-      })),
+      orders,
     });
   } catch (err: any) {
     console.error('Get analytics error:', err);
     res.status(500).json({ error: 'Failed to fetch analytics summary.' });
   }
 });
+
+app.use('/api/categories', categoryRoutes(requireAuth));
 
 // --- PRODUCTS ---
 app.get('/api/products', async (req, res) => {
@@ -346,7 +336,7 @@ app.get('/api/products', async (req, res) => {
       where.isFeatured = true;
     }
     if (category && category !== 'All') {
-      where.category = String(category);
+      where.category = { name: String(category) };
     }
 
     const products = await prisma.product.findMany({
@@ -430,7 +420,7 @@ app.post('/api/products', requireAuth, async (req, res) => {
       slug,
       shortDescription,
       description,
-      category,
+      categoryId,
       featuredImageUrl,
       image,
       available,
@@ -443,9 +433,11 @@ app.post('/api/products', requireAuth, async (req, res) => {
       price,
     } = req.body;
 
-    if (!name || !description || !category) {
+    if (typeof name !== 'string' || !name.trim() || !description || typeof categoryId !== 'string' || !categoryId) {
       return res.status(400).json({ error: 'Name, description, and category are required.' });
     }
+
+    if (!await requireDatabase().category.findUnique({ where: { id: categoryId } })) return res.status(400).json({ error: 'Choose an existing category.' });
 
     const generatedSlug = (slug || name)
       .toLowerCase()
@@ -478,8 +470,8 @@ app.post('/api/products', requireAuth, async (req, res) => {
     let variantsCreate: any[] = [];
     if (Array.isArray(variants) && variants.length > 0) {
       variantsCreate = variants.map((v: any, idx: number) => ({
-        name: v.name || v.size || 'Standard',
-        size: v.size || 'Standard',
+        name: typeof v.name === 'string' ? v.name.trim() : '',
+        size: typeof v.size === 'string' ? v.size.trim() : '',
         price: Number(v.price) || Number(price) || 0,
         compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
         available: v.available !== undefined ? Boolean(v.available) : true,
@@ -510,13 +502,15 @@ app.post('/api/products', requireAuth, async (req, res) => {
       ];
     }
 
+    buildVariantUpdate(variantsCreate, []);
+
     const product = await prisma.product.create({
       data: {
         name,
         slug: finalSlug,
         shortDescription: shortDescription || '',
         description,
-        category,
+        categoryId,
         featuredImageUrl: featuredImageUrl || image || (imagesCreate[0]?.imageUrl || ''),
         featuredImagePublicId: req.body.featuredImagePublicId || '',
         available: available !== undefined ? Boolean(available) : true,
@@ -535,19 +529,20 @@ app.post('/api/products', requireAuth, async (req, res) => {
     res.status(201).json(formatProduct(product));
   } catch (err: any) {
     console.error('Create product error:', err);
-    res.status(500).json({ error: 'Failed to create product in database.' });
+    res.status(err instanceof CheckoutError ? 400 : 500).json({ error: err instanceof CheckoutError ? err.message : 'Failed to create product in database.' });
   }
 });
 
 // Update product
 app.put('/api/products/:id', requireAuth, async (req, res) => {
   try {
+    requireDatabase();
     const {
       name,
       slug,
       shortDescription,
       description,
-      category,
+      categoryId,
       featuredImageUrl,
       featuredImagePublicId,
       image,
@@ -570,6 +565,10 @@ app.put('/api/products/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
+    if (categoryId !== undefined && (typeof categoryId !== 'string' || !await requireDatabase().category.findUnique({ where: { id: categoryId } }))) return res.status(400).json({ error: 'Choose an existing category.' });
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) return res.status(400).json({ error: 'Product name is required.' });
+    if (variants !== undefined) buildVariantUpdate(variants, existing.variants);
+
     // Build update object
     const newFeaturedImg = featuredImageUrl !== undefined ? featuredImageUrl : (image !== undefined ? image : existing.featuredImageUrl);
     if (newFeaturedImg && newFeaturedImg !== existing.featuredImageUrl && existing.featuredImagePublicId) {
@@ -581,7 +580,7 @@ app.put('/api/products/:id', requireAuth, async (req, res) => {
       slug: slug !== undefined ? slug : existing.slug,
       shortDescription: shortDescription !== undefined ? shortDescription : existing.shortDescription,
       description: description !== undefined ? description : existing.description,
-      category: category !== undefined ? category : existing.category,
+      category: { connect: { id: categoryId !== undefined ? categoryId : existing.categoryId } },
       featuredImageUrl: newFeaturedImg,
       featuredImagePublicId: featuredImagePublicId !== undefined ? featuredImagePublicId : existing.featuredImagePublicId,
       available: available !== undefined ? Boolean(available) : existing.available,
@@ -605,42 +604,13 @@ app.put('/api/products/:id', requireAuth, async (req, res) => {
       };
     }
 
-    // Update variants if provided
+    // Nested writes preserve IDs; omitted variants are archived, never deleted.
     if (variants !== undefined) {
-      updateData.variants = {
-        deleteMany: {},
-        create: Array.isArray(variants)
-          ? variants.map((v: any, idx: number) => ({
-              name: v.name || v.size || 'Standard',
-              size: v.size || 'Standard',
-              price: Number(v.price) || 0,
-              compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
-              available: v.available !== undefined ? Boolean(v.available) : true,
-              stock: v.stock !== undefined ? Number(v.stock) : 50,
-              sku: v.sku || `SKU-${existing.id}-${idx}`,
-            }))
-          : [],
-      };
+      updateData.variants = buildVariantUpdate(variants, existing.variants);
     } else if (sizes !== undefined) {
-      const sizesList = Array.isArray(sizes)
-        ? sizes.map((s: string) => s.trim()).filter(Boolean)
-        : typeof sizes === 'string'
-        ? sizes.split(',').map((s: string) => s.trim()).filter(Boolean)
-        : [];
-
-      updateData.variants = {
-        deleteMany: {},
-        create: sizesList.map((s: string, idx: number) => ({
-          name: s,
-          size: s,
-          price: price !== undefined ? Number(price) : 10000,
-          compareAtPrice: null,
-          available: true,
-          stock: 50,
-          sku: `SKU-${existing.id}-${idx}`,
-        })),
-      };
+      return res.status(400).json({ error: 'Submit variants with their existing IDs when editing sizes.' });
     }
+    if (typeof updateData.name !== 'string' || !updateData.name.trim()) return res.status(400).json({ error: 'Product name is required.' });
 
     const updated = await prisma.product.update({
       where: { id: req.params.id },
@@ -650,7 +620,7 @@ app.put('/api/products/:id', requireAuth, async (req, res) => {
     res.json(formatProduct(updated));
   } catch (err: any) {
     console.error('Update product error:', err);
-    res.status(500).json({ error: 'Failed to update product.' });
+    res.status(err instanceof CheckoutError ? 400 : 500).json({ error: err instanceof CheckoutError ? err.message : 'Failed to update product. Check database configuration and unique slug.' });
   }
 });
 
@@ -736,99 +706,31 @@ app.put('/api/admin/products/:productId/images/reorder', requireAuth, async (req
 
 // --- ORDERS ---
 app.get('/api/orders', requireAuth, async (req, res) => {
-  try {
-    const orders = await prisma.order.findMany({
-      include: { product: true },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    const formattedOrders = orders.map((o: any) => {
-      const prod = o.product ? formatProduct(o.product) : null;
-      return {
-        id: o.id,
-        customerName: o.customerName,
-        phone: o.phone,
-        email: o.email || '',
-        productId: o.productId,
-        productName: prod ? prod.name : 'Unknown Product',
-        productPrice: prod ? prod.price : 0,
-        quantity: o.quantity,
-        size: o.size || 'Standard',
-        status: o.status,
-        notes: o.notes || '',
-        createdAt: o.createdAt ? (typeof o.createdAt === 'string' ? o.createdAt : o.createdAt.toISOString()) : new Date().toISOString(),
-      };
-    });
-
-    res.json(formattedOrders);
-  } catch (err: any) {
-    console.error('Get orders error:', err);
-    res.status(500).json({ error: 'Failed to retrieve orders.' });
-  }
+  try { res.json(await requireDatabase().order.findMany({ include: { items: true }, orderBy: { createdAt: 'desc' } })); }
+  catch (err) { console.error(err); res.status(503).json({ error: 'Unable to load orders from PostgreSQL.' }); }
 });
-
+app.get('/api/admin/orders/:id', requireAuth, async (req, res) => {
+  try {
+    const order = await requireDatabase().order.findUnique({ where: { id: req.params.id }, include: { items: true } });
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    res.json(order);
+  } catch (err) { console.error(err); res.status(503).json({ error: 'Unable to load order.' }); }
+});
 app.post('/api/orders', async (req, res) => {
   try {
-    const { customerName, phone, email, productId, quantity, size, notes } = req.body;
-    if (!customerName || !phone || !productId || !quantity) {
-      return res.status(400).json({ error: 'Customer name, phone, product, and quantity are required.' });
-    }
-
-    const prod = await prisma.product.findUnique({
-      where: { id: productId },
-    });
-
-    if (!prod) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-
-    const newOrder = await prisma.order.create({
-      data: {
-        customerName,
-        phone,
-        email: email || null,
-        productId,
-        quantity: Number(quantity),
-        size: size || 'Standard',
-        status: 'Pending',
-        notes: notes || null,
-      },
-    });
-
-    res.status(201).json({
-      id: newOrder.id,
-      customerName: newOrder.customerName,
-      phone: newOrder.phone,
-      productId: newOrder.productId,
-      productName: prod.name,
-      quantity: newOrder.quantity,
-      size: newOrder.size,
-      status: newOrder.status,
-      createdAt: newOrder.createdAt instanceof Date ? newOrder.createdAt.toISOString() : String(newOrder.createdAt),
-    });
-  } catch (err: any) {
-    console.error('Create order error:', err);
-    res.status(500).json({ error: 'Failed to save order.' });
+    const order = await requireDatabase().$transaction(tx => createCheckout(tx, req.body), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    res.status(201).json(order);
+  } catch (err) {
+    console.error('Checkout failed:', err);
+    res.status(err instanceof CheckoutError ? 400 : 503).json({ error: err instanceof CheckoutError ? err.message : 'Order could not be saved. Please try again.' });
   }
 });
-
 app.put('/api/orders/:id', requireAuth, async (req, res) => {
   try {
     const { status } = req.body;
-    if (!['Pending', 'Processing', 'Completed', 'Cancelled'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid order status' });
-    }
-
-    const updated = await prisma.order.update({
-      where: { id: req.params.id },
-      data: { status },
-    });
-
-    res.json(updated);
-  } catch (err: any) {
-    console.error('Update order status error:', err);
-    res.status(500).json({ error: 'Failed to update order status.' });
-  }
+    if (!['Pending', 'Processing', 'Completed', 'Cancelled'].includes(status)) return res.status(400).json({ error: 'Invalid order status.' });
+    res.json(await requireDatabase().order.update({ where: { id: req.params.id }, data: { status }, include: { items: true } }));
+  } catch (err) { res.status(503).json({ error: 'Order status could not be saved.' }); }
 });
 
 // --- GALLERY ---

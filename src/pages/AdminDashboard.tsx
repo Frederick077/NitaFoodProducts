@@ -1,3 +1,7 @@
+import { variantLabel } from '../variantLabel';
+import CategoryManagement from '../components/admin/CategoryManagement';
+import type { Category } from '../types';
+import OrderDetails from '../components/admin/OrderDetails';
 import React, { useEffect, useState } from 'react';
 import { 
   Lock, 
@@ -61,7 +65,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Nav State
-  const [activeTab, setActiveTab] = useState<'overview' | 'images' | 'products' | 'orders' | 'gallery' | 'messages'>('overview');
+  const [activeTab, setActiveTab] = useState<'categories' | 'overview' | 'images' | 'products' | 'orders' | 'gallery' | 'messages'>('overview');
 
   // Database States
   const [stats, setStats] = useState<any>({
@@ -72,8 +76,20 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
     totalOrders: 0,
     totalSales: 0
   });
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryError, setCategoryError] = useState('');
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/categories');
+      const data = await response.json();
+      if (!response.ok || !Array.isArray(data)) throw new Error(data.error || 'Unable to load categories.');
+      setCategories(data); setCategoryError('');
+    } catch (error) { setCategoryError(error instanceof Error ? error.message : 'Unable to load categories.'); }
+  };
   const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [orderError, setOrderError] = useState('');
+  const [orderDetailsId, setOrderDetailsId] = useState<string | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
 
@@ -87,7 +103,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
   const [prodSlug, setProdSlug] = useState('');
   const [prodShortDesc, setProdShortDesc] = useState('');
   const [prodDesc, setProdDesc] = useState('');
-  const [prodCategory, setProdCategory] = useState('Seeds & Nuts');
+  const [prodCategory, setProdCategory] = useState('');
   const [prodFeaturedImage, setProdFeaturedImage] = useState('');
   const [prodFeaturedPublicId, setProdFeaturedPublicId] = useState('');
   const [prodAvailable, setProdAvailable] = useState(true);
@@ -121,15 +137,18 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
       const statsData = await statsRes.json();
       if (!statsData.error) setStats(statsData);
 
+      await fetchCategories();
+
       // Products
-      const prodRes = await fetch('/api/products');
+      const prodRes = await fetch('/api/admin/products', { headers });
       const prodData = await prodRes.json();
       if (!prodData.error) setProducts(prodData);
 
       // Orders
       const ordRes = await fetch('/api/orders', { headers });
       const ordData = await ordRes.json();
-      if (!ordData.error) setOrders(ordData);
+      if (ordRes.ok && Array.isArray(ordData)) { setOrders(ordData); setOrderError(''); }
+      else setOrderError(ordData.error || 'Unable to load orders.');
 
       // Gallery
       const galRes = await fetch('/api/gallery');
@@ -177,7 +196,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
     setProdSlug('');
     setProdShortDesc('');
     setProdDesc('');
-    setProdCategory('Seeds & Nuts');
+    setProdCategory('');
     setProdFeaturedImage('');
     setProdFeaturedPublicId('');
     setProdAvailable(true);
@@ -196,7 +215,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
     setProdSlug(p.slug || '');
     setProdShortDesc(p.shortDescription || '');
     setProdDesc(p.description);
-    setProdCategory(p.category);
+    setProdCategory(p.categoryId);
     setProdFeaturedImage(p.featuredImageUrl || p.image || '');
     setProdFeaturedPublicId(p.featuredImagePublicId || '');
     setProdAvailable(p.available !== false);
@@ -225,7 +244,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         name: v.name,
         size: v.size,
         price: v.price,
-        compareAtPrice: v.compareAtPrice || '',
+        compareAtPrice: v.compareAtPrice ?? '',
         available: v.available,
         stock: v.stock,
         sku: v.sku || ''
@@ -267,9 +286,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
 
   // Update Variant Row
   const handleUpdateVariantField = (index: number, field: keyof VariantFormState, value: any) => {
-    const updated = [...prodVariants];
-    updated[index] = { ...updated[index], [field]: value };
-    setProdVariants(updated);
+    setProdVariants(current => current.map((v, i) => i === index ? { ...v, [field]: value } : v));
   };
 
   // Add Image Row
@@ -304,7 +321,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         slug: prodSlug || undefined,
         shortDescription: prodShortDesc,
         description: prodDesc,
-        category: prodCategory,
+        categoryId: prodCategory,
         featuredImageUrl: prodFeaturedImage || (prodImages[0]?.imageUrl || ''),
         featuredImagePublicId: prodFeaturedPublicId || '',
         available: prodAvailable,
@@ -313,10 +330,11 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         benefits: prodBenefits,
         images: prodImages.filter(img => img.imageUrl.trim() !== ''),
         variants: prodVariants.map(v => ({
-          name: v.name || v.size,
-          size: v.size || v.name,
+          id: v.id,
+          name: v.name.trim(),
+          size: v.size.trim(),
           price: Number(v.price) || 0,
-          compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
+          compareAtPrice: v.compareAtPrice === '' ? null : Number(v.compareAtPrice),
           available: v.available,
           stock: Number(v.stock) || 0,
           sku: v.sku || ''
@@ -335,6 +353,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         body: JSON.stringify(payload)
       });
 
+      if (!res.ok) { const data = await res.json(); throw new Error(data.error || 'Product save failed'); }
       if (res.ok) {
         setIsAddingProduct(false);
         setEditingProduct(null);
@@ -342,7 +361,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         fetchAdminData();
       }
     } catch (err) {
-      console.error('Error saving product:', err);
+      alert(err instanceof Error ? err.message : 'Product save failed');
     } finally {
       setIsSavingProduct(false);
     }
@@ -557,6 +576,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
             {[
               { id: 'overview', label: 'Overview', icon: BarChart3 },
               { id: 'images', label: 'Image Management', icon: Sparkles },
+              { id: 'categories', label: 'Product Categories', icon: Layers },
               { id: 'products', label: 'Products & Variants', icon: ShoppingBag },
               { id: 'orders', label: 'Orders', icon: ClipboardCheck },
               { id: 'gallery', label: 'Gallery', icon: ImageIcon },
@@ -694,6 +714,8 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         )}
 
         {/* 2. PRODUCTS & VARIANTS TAB */}
+        {activeTab === 'categories' && <CategoryManagement token={token} categories={categories} loadError={categoryError} onChange={async () => { await fetchCategories(); await fetchAdminData(); }} />}
+
         {activeTab === 'products' && (
           <div className="space-y-8" id="products-dashboard-view">
             <div className="flex justify-between items-center">
@@ -758,14 +780,14 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                       <div>
                         <label className="block font-bold text-gray-700 mb-1">Category *</label>
                         <select 
-                          value={prodCategory} onChange={e => setProdCategory(e.target.value)}
+                          required value={prodCategory} onChange={e => setProdCategory(e.target.value)}
                           className="w-full bg-gray-50/50 rounded-xl border border-gray-200 px-3.5 py-2 text-xs focus:border-emerald-500"
                         >
-                          <option value="Seeds & Nuts">Seeds & Nuts</option>
-                          <option value="Snacks & Energy Bars">Snacks & Energy Bars</option>
-                          <option value="Organic Grains">Organic Grains</option>
-                          <option value="Other Premium Products">Other Premium Products</option>
+                          <option value="">Select a category</option>
+                          {categories.map(category => <option key={category.id} value={category.id}>{category.name || 'Unnamed legacy category'}</option>)}
                         </select>
+                        {categoryError && <p role="alert">{categoryError}</p>}
+                        {!categories.length && <p>Create a category in Product Categories first.</p>}
                       </div>
 
                       <div>
@@ -936,20 +958,20 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                       {prodVariants.map((v, idx) => (
                         <div key={idx} className="p-3.5 bg-emerald-50/40 rounded-2xl border border-emerald-100 grid grid-cols-1 sm:grid-cols-6 gap-3 items-center">
                           <div>
-                            <label className="block text-[10px] font-bold text-gray-600 mb-1">Variant Name / Size</label>
+                            <label className="block text-[10px] font-bold text-gray-600 mb-1">Pack Size</label>
                             <input
                               type="text"
-                              required
                               value={v.size}
                               onChange={(e) => {
                                 handleUpdateVariantField(idx, 'size', e.target.value);
-                                handleUpdateVariantField(idx, 'name', e.target.value);
+
                               }}
                               placeholder="e.g. 250g Pouch"
                               className="w-full bg-white rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs"
                             />
                           </div>
 
+                          <div><label className="block text-[10px] font-bold text-gray-600 mb-1">Variant Name (optional)</label><input value={v.name} onChange={e => handleUpdateVariantField(idx, 'name', e.target.value)} className="w-full bg-white rounded-lg border px-2 py-1 text-xs" /></div>
                           <div>
                             <label className="block text-[10px] font-bold text-gray-600 mb-1">Price (TZS) *</label>
                             <input
@@ -1012,7 +1034,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                               disabled={prodVariants.length <= 1}
                               onClick={() => handleRemoveVariantRow(idx)}
                               className="p-1.5 text-red-500 hover:text-red-700 disabled:opacity-30"
-                              title="Delete Variant"
+                              title="Archive variant when saved"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1095,7 +1117,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                               {variants.length > 0 ? (
                                 variants.map((v) => (
                                   <span key={v.id} className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-700 font-medium">
-                                    {v.size || v.name}: {formatTZS(v.price)}
+                                    {variantLabel(v)}: {formatTZS(v.price)}
                                   </span>
                                 ))
                               ) : (
@@ -1151,9 +1173,11 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
           </div>
         )}
 
+        {orderDetailsId && token && <OrderDetails id={orderDetailsId} token={token} onClose={() => setOrderDetailsId(null)} />}
         {/* 3. ORDERS TAB */}
         {activeTab === 'orders' && (
           <div className="space-y-8" id="orders-dashboard-view">
+            {orderError && <p role="alert" className="text-red-700">{orderError}</p>}
             <h3 className="font-bold text-lg text-emerald-950 font-sans tracking-tight">
               Order Dispatch Management
             </h3>
@@ -1166,9 +1190,9 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                       <th className="p-4 text-left">Order Ref</th>
                       <th className="p-4 text-left">Customer</th>
                       <th className="p-4 text-left">Phone</th>
-                      <th className="p-4 text-left">Product</th>
-                      <th className="p-4 text-left">Pack Size</th>
-                      <th className="p-4 text-left">Qty</th>
+                      <th className="p-4 text-left">Date</th>
+                      <th className="p-4 text-left">Items</th>
+                      <th className="p-4 text-left">Total</th>
                       <th className="p-4 text-left">Status</th>
                       <th className="p-4 text-center">Action</th>
                     </tr>
@@ -1176,15 +1200,15 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                   <tbody className="divide-y divide-gray-100">
                     {orders.map((o) => (
                       <tr key={o.id} className="hover:bg-gray-50/50">
-                        <td className="p-4 font-mono font-bold text-emerald-800">{o.id}</td>
+                        <td className="p-4 font-mono font-bold text-emerald-800"><button onClick={() => setOrderDetailsId(o.id)} className="underline break-all">{o.orderNumber || o.id}</button></td>
                         <td className="p-4 font-bold text-gray-900">{o.customerName}</td>
                         <td className="p-4 text-gray-600 font-medium flex items-center space-x-1">
                           <Smartphone className="w-3 h-3 text-gray-400" />
                           <span>{o.phone}</span>
                         </td>
-                        <td className="p-4 text-gray-600 font-semibold">{o.productName}</td>
-                        <td className="p-4 text-gray-500">{o.size}</td>
-                        <td className="p-4 text-gray-900 font-bold">{o.quantity}</td>
+                        <td className="p-4 text-gray-600 font-semibold">{new Date(o.createdAt).toLocaleDateString()}</td>
+                        <td className="p-4 text-gray-500">{o.items?.length || 1}</td>
+                        <td className="p-4 text-gray-900 font-bold">{o.total == null ? 'Unknown (legacy)' : formatTZS(Number(o.total))}</td>
                         <td className="p-4">
                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                             o.status === 'Completed' ? 'bg-emerald-100 text-emerald-800' :

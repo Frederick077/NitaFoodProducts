@@ -105,8 +105,8 @@ export default function Contact() {
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest block">Our Location</span>
-                  <p className="text-sm font-bold text-gray-900">Dar es Salaam, Tanzania</p>
-                  <p className="text-xs text-gray-500">P.O. Box 12345, Sinza Area, Dar es Salaam</p>
+                  <p className="text-sm font-bold text-gray-900">Arusha, Tanzania</p>
+                  <p className="text-xs text-gray-500">P.O. Box 13028, Kiserian, Arusha</p>
                 </div>
               </div>
 
@@ -116,8 +116,8 @@ export default function Contact() {
                   <Phone className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest block">Phone Call Hotline</span>
-                  <p className="text-sm font-bold text-gray-900">+255 712 345 678</p>
+                  <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest block">Phone Call</span>
+                  <p className="text-sm font-bold text-gray-900">+255 757 542 585</p>
                   <p className="text-xs text-gray-500">Available Mon-Fri, 8:00 AM - 5:00 PM</p>
                 </div>
               </div>
@@ -129,7 +129,7 @@ export default function Contact() {
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest block">Email Inquiries</span>
-                  <p className="text-sm font-bold text-emerald-800">info@nitafoods.co.tz</p>
+                  <p className="text-sm font-bold text-emerald-800">nitafoodproducts@gmail.com</p>
                   <p className="text-xs text-gray-500">Write anytime. We respond in 24 hours.</p>
                 </div>
               </div>
@@ -198,7 +198,7 @@ export default function Contact() {
                         required
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="e.g. Amina Juma"
+                        placeholder="e.g John Peter"
                         className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm placeholder:text-gray-400 focus:border-emerald-500 focus:ring-emerald-500"
                       />
                     </div>
@@ -212,7 +212,7 @@ export default function Contact() {
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="e.g. amina@gmail.com"
+                        placeholder="e.g. customer45@gmail.com"
                         className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm placeholder:text-gray-400 focus:border-emerald-500 focus:ring-emerald-500"
                       />
                     </div>

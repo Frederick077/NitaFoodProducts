@@ -1,3 +1,6 @@
+import { CartProvider } from './context/CartContext';
+import Checkout from './pages/Cart';
+import CartModal from './components/CartModal';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -52,7 +55,7 @@ export default function App() {
   };
 
   return (
-    <Router>
+    <CartProvider><Router>
       <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800" id="nita-app-container">
         {/* Scroll Helper */}
         <ScrollToTop />
@@ -63,6 +66,7 @@ export default function App() {
         {/* Main Content Viewport */}
         <main className="flex-grow">
           <Routes>
+            <Route path="/checkout" element={<Checkout />} />
             <Route path="/" element={<Home />} />
             <Route path="/about" element={<About />} />
             <Route path="/products" element={<Products />} />
@@ -104,6 +108,7 @@ export default function App() {
         {/* Global Footer */}
         <Footer />
       </div>
-    </Router>
+      <CartModal />
+    </Router></CartProvider>
   );
 }

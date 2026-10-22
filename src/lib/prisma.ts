@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
@@ -19,7 +20,7 @@ if (isDatabaseConfigured) {
       globalForPrisma.prisma = realPrisma;
     }
   } catch (err) {
-    console.warn('[Database] Prisma initialization deferred:', err);
+    throw err;
   }
 }
 
@@ -177,7 +178,7 @@ class InMemoryDB {
     for (const p of defaultProducts) {
       const { images, variants, ...prodData } = p;
       this.products.push(prodData);
-      
+
       images.forEach((img, idx) => {
         this.productImages.push({
           id: `img-${p.id}-${idx}`,
@@ -207,8 +208,8 @@ class InMemoryDB {
     }
 
     const categories = [
-      'Products', 'Products', 'Packaging', 'Packaging', 
-      'Production Process', 'Production Process', 'Company Events', 'Company Events', 
+      'Products', 'Products', 'Packaging', 'Packaging',
+      'Production Process', 'Production Process', 'Company Events', 'Company Events',
       'Customers', 'Customers'
     ];
     categories.forEach((cat, idx) => {
@@ -290,18 +291,18 @@ export const prisma: any = {
   product: {
     count: async (args?: any) => {
       if (realPrisma) {
-        try { return await realPrisma.product.count(args); } catch (e) { /* fallback */ }
+        try { return await realPrisma.product.count(args); } catch (e) { throw e; }
       }
       return memDB.products.length;
     },
     findMany: async (args?: any) => {
       if (realPrisma) {
-        try { 
+        try {
           return await realPrisma.product.findMany({
             ...args,
-            include: { images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
-          }); 
-        } catch (e) { /* fallback */ }
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
+          });
+        } catch (e) { throw e; }
       }
       let prods = [...memDB.products];
       if (args?.where) {
@@ -327,12 +328,12 @@ export const prisma: any = {
     },
     findUnique: async ({ where }: any) => {
       if (realPrisma) {
-        try { 
-          return await realPrisma.product.findUnique({ 
-            where, 
-            include: { images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } } 
-          }); 
-        } catch (e) { /* fallback */ }
+        try {
+          return await realPrisma.product.findUnique({
+            where,
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
+          });
+        } catch (e) { throw e; }
       }
       const p = memDB.products.find((prod) => prod.id === where.id || prod.slug === where.slug);
       if (!p) return null;
@@ -346,12 +347,12 @@ export const prisma: any = {
     },
     findFirst: async ({ where }: any) => {
       if (realPrisma) {
-        try { 
-          return await realPrisma.product.findFirst({ 
-            where, 
-            include: { images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } } 
-          }); 
-        } catch (e) { /* fallback */ }
+        try {
+          return await realPrisma.product.findFirst({
+            where,
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
+          });
+        } catch (e) { throw e; }
       }
       const p = memDB.products.find((prod) => {
         if (where.id && prod.id === where.id) return true;
@@ -368,13 +369,14 @@ export const prisma: any = {
       return { ...p, images, variants };
     },
     create: async ({ data }: any) => {
+      requireDatabase();
       if (realPrisma) {
-        try { 
-          return await realPrisma.product.create({ 
-            data, 
-            include: { images: true, variants: true } 
-          }); 
-        } catch (e) { /* fallback */ }
+        try {
+          return await realPrisma.product.create({
+            data,
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
+          });
+        } catch (e) { throw e; }
       }
       const newId = data.id || `prod-${Date.now()}`;
       const { images, variants, ...prodData } = data;
@@ -435,14 +437,15 @@ export const prisma: any = {
       return { ...createdProduct, images: createdImages, variants: createdVariants };
     },
     update: async ({ where, data }: any) => {
+      requireDatabase();
       if (realPrisma) {
-        try { 
-          return await realPrisma.product.update({ 
-            where, 
-            data, 
-            include: { images: true, variants: true } 
-          }); 
-        } catch (e) { /* fallback */ }
+        try {
+          return await realPrisma.product.update({
+            where,
+            data,
+            include: { category: true, images: { orderBy: { position: 'asc' } }, variants: { orderBy: { price: 'asc' } } }
+          });
+        } catch (e) { throw e; }
       }
       const p = memDB.products.find((prod) => prod.id === where.id);
       if (!p) throw new Error('Product not found');
@@ -498,7 +501,7 @@ export const prisma: any = {
     },
     delete: async ({ where }: any) => {
       if (realPrisma) {
-        try { return await realPrisma.product.delete({ where }); } catch (e) { /* fallback */ }
+        try { return await realPrisma.product.delete({ where }); } catch (e) { throw e; }
       }
       const idx = memDB.products.findIndex((prod) => prod.id === where.id);
       if (idx === -1) throw new Error('Product not found');
@@ -731,41 +734,9 @@ export const prisma: any = {
   },
 
   order: {
-    findMany: async (args?: any) => {
-      if (realPrisma) {
-        try { return await realPrisma.order.findMany(args); } catch (e) { /* fallback */ }
-      }
-      return memDB.orders.map((o) => {
-        const product = memDB.products.find((p) => p.id === o.productId) || null;
-        return { ...o, product };
-      });
-    },
-    create: async ({ data }: any) => {
-      if (realPrisma) {
-        try { return await realPrisma.order.create({ data, include: { product: true } }); } catch (e) { /* fallback */ }
-      }
-      const newId = `ord-${Date.now()}`;
-      const product = memDB.products.find((p) => p.id === data.productId) || null;
-      const newOrder = {
-        id: newId,
-        ...data,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        product,
-      };
-      memDB.orders.unshift(newOrder);
-      return newOrder;
-    },
-    update: async ({ where, data }: any) => {
-      if (realPrisma) {
-        try { return await realPrisma.order.update({ where, data, include: { product: true } }); } catch (e) { /* fallback */ }
-      }
-      const ord = memDB.orders.find((o) => o.id === where.id);
-      if (!ord) throw new Error('Order not found');
-      Object.assign(ord, data, { updatedAt: new Date() });
-      const product = memDB.products.find((p) => p.id === ord.productId) || null;
-      return { ...ord, product };
-    },
+    findMany: (args?: Parameters<PrismaClient['order']['findMany']>[0]) => requireDatabase().order.findMany({ ...args, include: { items: true } }),
+    create: (args: Parameters<PrismaClient['order']['create']>[0]) => requireDatabase().order.create(args),
+    update: (args: Parameters<PrismaClient['order']['update']>[0]) => requireDatabase().order.update({ ...args, include: { items: true } }),
   },
 
   message: {
@@ -825,3 +796,8 @@ export const prisma: any = {
 };
 
 export default prisma;
+
+export function requireDatabase(): PrismaClient {
+  if (!realPrisma) throw new Error('PostgreSQL is not configured. Set DATABASE_URL before saving products or orders.');
+  return realPrisma;
+}

@@ -1,14 +1,16 @@
+import { variantLabel } from '../variantLabel';
+﻿import { useCart } from '../context/CartContext';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
-  ArrowLeft, 
-  CheckCircle, 
-  ListPlus, 
-  Heart, 
-  Award, 
-  ShieldAlert, 
-  ShoppingCart, 
-  MessageSquare, 
+import {
+  ArrowLeft,
+  CheckCircle,
+  ListPlus,
+  Heart,
+  Award,
+  ShieldAlert,
+  ShoppingCart,
+  MessageSquare,
   Sparkles,
   Layers,
   ChevronRight,
@@ -17,7 +19,7 @@ import {
 } from 'lucide-react';
 import { Product, ProductVariant } from '../types';
 import { trackPageView, formatTZS, getWhatsAppLink } from '../utils';
-import OrderModal from '../components/OrderModal';
+
 import SafeImage from '../components/SafeImage';
 import ProductCard from '../components/ProductCard';
 
@@ -30,7 +32,8 @@ export default function ProductDetails() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
-  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const { addItem } = useCart();
+  const [cartFeedback, setCartFeedback] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -46,8 +49,11 @@ export default function ProductDetails() {
       })
       .then((data: Product) => {
         setProduct(data);
+        setQuantity(1);
+        setCartFeedback('');
+        setSelectedVariantId('');
         setSelectedImageIndex(0);
-        
+
         // Select first available variant or first variant
         if (data.variants && data.variants.length > 0) {
           const firstAvailable = data.variants.find((v) => v.available && v.stock > 0) || data.variants[0];
@@ -123,7 +129,7 @@ export default function ProductDetails() {
   const currentPrice = activeVariant ? activeVariant.price : (product.price || 10000);
   const compareAtPrice = activeVariant?.compareAtPrice || null;
   const isAvailable = activeVariant ? (activeVariant.available && activeVariant.stock > 0) : product.available;
-  const activeSizeName = activeVariant ? (activeVariant.size || activeVariant.name) : (product.sizes?.[0] || 'Standard');
+  const activeSizeName = activeVariant ? variantLabel(activeVariant) : 'Standard';
 
   const handleWhatsAppClick = () => {
     const link = getWhatsAppLink(product.name, quantity, activeSizeName);
@@ -133,7 +139,7 @@ export default function ProductDetails() {
   return (
     <div className="bg-slate-50/50 min-h-screen py-10 sm:py-16 px-4 md:px-8" id="product-detail-view">
       <div className="max-w-6xl mx-auto space-y-10">
-        
+
         {/* Navigation breadcrumb bar */}
         <div className="flex flex-wrap items-center justify-between gap-4 text-xs">
           <nav className="flex items-center space-x-2 text-gray-500 font-medium">
@@ -151,7 +157,7 @@ export default function ProductDetails() {
 
         {/* Main Product Display Card */}
         <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 p-6 sm:p-10">
-          
+
           {/* Left Column: Image Gallery */}
           <div className="lg:col-span-6 space-y-4">
             {/* Main Primary Image */}
@@ -212,7 +218,7 @@ export default function ProductDetails() {
 
           {/* Right Column: Product Info & Purchase Controls */}
           <div className="lg:col-span-6 space-y-6 text-left flex flex-col justify-between">
-            
+
             {/* Header info */}
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-2">
@@ -282,7 +288,7 @@ export default function ProductDetails() {
                               : 'bg-white text-gray-700 border-gray-200 hover:border-emerald-300 hover:bg-emerald-50/40'
                           } ${!inStock ? 'opacity-50 line-through' : ''}`}
                         >
-                          <span>{v.size || v.name}</span>
+                          <span>{variantLabel(v)}</span>
                           <span className={isSelected ? 'text-emerald-200' : 'text-gray-400'}>
                             {formatTZS(v.price)}
                           </span>
@@ -311,7 +317,7 @@ export default function ProductDetails() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => setQuantity(quantity + 1)}
+                    onClick={() => setQuantity(Math.min(quantity + 1, activeVariant?.stock || 1))}
                     className="px-3.5 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 transition"
                   >
                     +
@@ -323,16 +329,17 @@ export default function ProductDetails() {
               </div>
             </div>
 
+            <p role="status" className="text-emerald-800">{cartFeedback}</p>
             {/* CTA Order Buttons */}
             <div className="space-y-3 pt-6 border-t border-gray-100">
               <button
                 type="button"
-                onClick={() => setIsOrderModalOpen(true)}
-                disabled={!isAvailable}
+                onClick={() => { try { addItem(product, selectedVariantId, quantity); setCartFeedback('Added to cart. Continue shopping or open your cart.'); } catch(e) { setCartFeedback((e as Error).message); } }}
+                disabled={!isAvailable || !product.available || !selectedVariantId}
                 className="w-full flex items-center justify-center gap-2.5 px-8 py-4 bg-emerald-700 hover:bg-emerald-800 disabled:bg-gray-200 disabled:text-gray-400 text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-emerald-700/20 transition hover:scale-[1.01]"
               >
                 <ShoppingCart className="w-5 h-5" />
-                <span>{isAvailable ? 'Order Product Now' : 'Currently Out of Stock'}</span>
+                <span>{isAvailable ? 'ADD TO CART' : 'Currently Out of Stock'}</span>
               </button>
 
               <button
@@ -410,7 +417,7 @@ export default function ProductDetails() {
                 You May Also Like
               </h3>
               <Link to="/products" className="text-xs font-bold text-emerald-700 hover:text-orange-500 transition">
-                View All Products →
+                View All Products â†’
               </Link>
             </div>
 
@@ -424,14 +431,6 @@ export default function ProductDetails() {
 
       </div>
 
-      {/* Product Order Modal */}
-      {isOrderModalOpen && (
-        <OrderModal
-          product={product}
-          initialVariantId={selectedVariantId}
-          onClose={() => setIsOrderModalOpen(false)}
-        />
-      )}
     </div>
   );
 }

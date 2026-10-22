@@ -106,14 +106,14 @@ export default function ProductCard({ product, onQuickOrder }: ProductCardProps)
           </p>
 
           {/* Sizes / Variants Pills */}
-          {product.sizes && product.sizes.length > 0 && (
+          {variants.length > 0 && (
             <div className="pt-1.5 flex flex-wrap gap-1">
-              {product.sizes.map((s) => (
+              {variants.map((v) => (
                 <span
-                  key={s}
+                  key={v.id}
                   className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 bg-gray-50 text-gray-600 rounded-md border border-gray-200/60"
                 >
-                  {s}
+                  {v.name}{v.size !== v.name ? ` / ${v.size}` : ''}
                 </span>
               ))}
             </div>

@@ -144,10 +144,12 @@ async function main() {
     ];
 
     for (const p of productsData) {
-      const { images, variants, ...prodData } = p;
+      const { images, variants, category, ...prodData } = p;
+      const categoryRecord = await prisma.category.upsert({ where: { name: category }, update: {}, create: { name: category, slug: category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") } });
       await prisma.product.create({
         data: {
           ...prodData,
+          categoryId: categoryRecord.id,
           images: {
             create: images.map((img, idx) => ({
               imageUrl: img.imageUrl,

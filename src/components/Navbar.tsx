@@ -1,11 +1,13 @@
+import { useCart } from '../context/CartContext';
+import { ShoppingCart } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  ChevronDown, 
-  Menu, 
-  X, 
-  Search, 
-  User, 
+import {
+  ChevronDown,
+  Menu,
+  X,
+  Search,
+  User,
   ShieldAlert,
   ArrowRight
 } from 'lucide-react';
@@ -18,6 +20,8 @@ interface NavbarProps {
 }
 
 export default function Navbar({ isAdminLoggedIn = false, onLogout }: NavbarProps) {
+  const { cartItems, openCart } = useCart();
+  const itemCount = cartItems.length;
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -49,26 +53,13 @@ export default function Navbar({ isAdminLoggedIn = false, onLogout }: NavbarProp
   const [dynamicCategories, setDynamicCategories] = useState<string[]>([]);
 
   useEffect(() => {
-    // Fetch live products for categories & instant search
-    fetch('/api/products')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setAllProducts(data);
-          const uniqueCats = Array.from(
-            new Set(data.map((p: any) => p.category).filter(Boolean))
-          ) as string[];
-          if (uniqueCats.length > 0) {
-            setDynamicCategories(uniqueCats);
-          } else {
-            setDynamicCategories(['Seeds & Grains', 'Granola & Energy Bars', 'Organic Harvest']);
-          }
-        }
-      })
-      .catch((err) => {
-        console.warn('Could not fetch dynamic navigation data:', err);
-        setDynamicCategories(['Seeds & Grains', 'Granola & Energy Bars', 'Organic Harvest']);
-      });
+    const refresh = () => {
+      fetch('/api/products').then(res => res.json()).then(data => { if (Array.isArray(data)) setAllProducts(data); }).catch(() => {});
+      fetch('/api/categories').then(res => res.json()).then(data => setDynamicCategories(Array.isArray(data) ? data.map(category => category.name) : [])).catch(() => setDynamicCategories([]));
+    };
+    refresh();
+    window.addEventListener('nita-categories-changed', refresh);
+    return () => window.removeEventListener('nita-categories-changed', refresh);
   }, [location.pathname]);
 
   // Handle Logo Click: smooth scroll to top if already on homepage
@@ -160,7 +151,7 @@ export default function Navbar({ isAdminLoggedIn = false, onLogout }: NavbarProp
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-20">
-            
+
             {/* 1. NITA BRAND LOGO (Left) */}
             <Link
               to="/"
@@ -171,11 +162,12 @@ export default function Navbar({ isAdminLoggedIn = false, onLogout }: NavbarProp
             >
               {/* Brand Logo Emblem */}
               <div className="flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-800 text-white font-black text-lg shadow-sm shadow-emerald-900/20 group-hover:bg-emerald-900 group-hover:scale-105 transition-all duration-200">
-                <span className="text-orange-400">N</span>I
+
+                <img className="login-brand-mark" src="/assets/nita-logo.jpeg" alt="Nita Food Products logo" />
               </div>
               <div className="text-left">
                 <span className="block text-lg sm:text-xl font-black tracking-tight text-emerald-950 font-sans leading-none">
-                  NITA <span className="text-orange-500">FOOD</span>
+                  Nita <span className="text-orange-500">Food</span>
                 </span>
                 <span className="block text-[9px] sm:text-[10px] uppercase tracking-widest text-emerald-800 font-bold mt-1">
                   Products
@@ -368,7 +360,8 @@ export default function Navbar({ isAdminLoggedIn = false, onLogout }: NavbarProp
 
             {/* 3. UTILITY ICONS & ADMIN PILL (Right Side) */}
             <div className="flex items-center space-x-1 sm:space-x-2">
-              
+
+              <button type="button" onClick={openCart} aria-haspopup="dialog" aria-label={`Cart, ${itemCount} items`} className="relative p-2 text-emerald-900"><ShoppingCart className="w-5 h-5" />{itemCount > 0 && <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs rounded-full px-1">{itemCount}</span>}</button>
               {/* Search Icon (Opens dynamic product search modal) */}
               <button
                 type="button"
@@ -592,12 +585,12 @@ export default function Navbar({ isAdminLoggedIn = false, onLogout }: NavbarProp
 
       {/* 5. PRODUCT SEARCH MODAL */}
       {isSearchOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-start justify-center p-4 pt-20 animate-fade-in"
           onClick={() => setIsSearchOpen(false)}
           id="product-search-modal-overlay"
         >
-          <div 
+          <div
             className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-emerald-100 overflow-hidden text-left"
             onClick={(e) => e.stopPropagation()}
             id="product-search-dialog"
@@ -656,9 +649,9 @@ export default function Navbar({ isAdminLoggedIn = false, onLogout }: NavbarProp
                       <div className="flex items-center space-x-3">
                         <div className="w-10 h-10 rounded-xl bg-emerald-100/60 flex items-center justify-center text-emerald-800 font-bold text-xs shrink-0 overflow-hidden">
                           {prod.featuredImageUrl || prod.image || prod.images?.[0]?.imageUrl ? (
-                            <img 
-                              src={prod.featuredImageUrl || prod.image || prod.images?.[0]?.imageUrl} 
-                              alt={prod.name} 
+                            <img
+                              src={prod.featuredImageUrl || prod.image || prod.images?.[0]?.imageUrl}
+                              alt={prod.name}
                               className="w-full h-full object-cover"
                               referrerPolicy="no-referrer"
                             />

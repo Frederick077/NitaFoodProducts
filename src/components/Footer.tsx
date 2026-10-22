@@ -11,7 +11,7 @@ export default function Footer() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
-          
+
           {/* Brand Presentation */}
           <div className="space-y-6">
             <Link to="/" className="flex items-center space-x-2" id="footer-logo">
@@ -20,10 +20,10 @@ export default function Footer() {
               </div>
               <div>
                 <span className="block text-xl font-bold tracking-tight text-white">
-                  NITA <span className="text-orange-400">FOOD</span>
+                  Nita <span className="text-orange-400">Food</span>
                 </span>
-                <span className="block text-[10px] uppercase tracking-widest text-emerald-300 font-semibold leading-none">
-                  Products Ltd
+                <span className="block text-[10px] tracking-widest text-emerald-300 font-semibold leading-none">
+                  Products
                 </span>
               </div>
             </Link>
@@ -32,17 +32,17 @@ export default function Footer() {
               We produce and supply premium natural food products across Tanzania and the globe, promoting hygiene and nutritional excellence.
             </p>
             <div className="flex space-x-3">
-              <a 
-                href="https://instagram.com/nitafoodproducts" 
-                target="_blank" 
+              <a
+                href="https://instagram.com/nitafoodproducts"
+                target="_blank"
                 rel="noreferrer"
                 className="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-900/80 hover:bg-orange-500 hover:text-white text-emerald-200 transition-all duration-300 shadow-inner"
                 title="Follow us on Instagram"
               >
                 <Instagram className="w-5 h-5" />
               </a>
-              <a 
-                href="#whatsapp-link" 
+              <a
+                href="#whatsapp-link"
                 className="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-900/80 hover:bg-orange-500 hover:text-white text-emerald-200 transition-all duration-300 shadow-inner"
               >
                 <Globe className="w-5 h-5" />
@@ -59,25 +59,25 @@ export default function Footer() {
               <li>
                 <Link to="/" className="text-emerald-200/80 hover:text-orange-400 transition flex items-center space-x-1.5">
                   <ArrowUpRight className="w-3 h-3 text-emerald-500" />
-                  <span>Home Landing</span>
+                  <span>Home</span>
                 </Link>
               </li>
               <li>
                 <Link to="/about" className="text-emerald-200/80 hover:text-orange-400 transition flex items-center space-x-1.5">
                   <ArrowUpRight className="w-3 h-3 text-emerald-500" />
-                  <span>About NITA</span>
+                  <span>About</span>
                 </Link>
               </li>
               <li>
                 <Link to="/products" className="text-emerald-200/80 hover:text-orange-400 transition flex items-center space-x-1.5">
                   <ArrowUpRight className="w-3 h-3 text-emerald-500" />
-                  <span>Product Catalog</span>
+                  <span>Products</span>
                 </Link>
               </li>
               <li>
                 <Link to="/gallery" className="text-emerald-200/80 hover:text-orange-400 transition flex items-center space-x-1.5">
                   <ArrowUpRight className="w-3 h-3 text-emerald-500" />
-                  <span>Visual Gallery</span>
+                  <span>Gallery</span>
                 </Link>
               </li>
               <li>
@@ -104,17 +104,17 @@ export default function Footer() {
               <li className="flex items-start space-x-3">
                 <MapPin className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
                 <span className="text-emerald-200/80 leading-relaxed">
-                  P.O. Box 12345,<br />
-                  Dar es Salaam, Tanzania
+                  P.O. Box 13028,<br />
+                  Arusha, Tanzania
                 </span>
               </li>
               <li className="flex items-center space-x-3">
                 <Phone className="w-5 h-5 text-orange-400 shrink-0" />
-                <span className="text-emerald-200/80">+255 712 345 678</span>
+                <span className="text-emerald-200/80">+255 757 542 585</span>
               </li>
               <li className="flex items-center space-x-3">
                 <Mail className="w-5 h-5 text-orange-400 shrink-0" />
-                <span className="text-emerald-200/80">info@nitafoods.co.tz</span>
+                <span className="text-emerald-200/80">nitafoodproducts@gmail.com</span>
               </li>
             </ul>
           </div>
@@ -131,14 +131,14 @@ export default function Footer() {
               </div>
               <div className="flex justify-between">
                 <span className="text-emerald-300">Saturday:</span>
-                <span className="text-white font-medium">9:00 AM - 1:00 PM</span>
+                <span className="text-white font-medium">8:00 AM - 3:30 PM</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-emerald-300">Sunday:</span>
                 <span className="text-orange-300 font-semibold">Closed</span>
               </div>
               <p className="text-[11px] text-emerald-300/60 text-center pt-2 border-t border-emerald-900/60">
-                Food Safety Certified & FDA Standard Compliant
+                Food Safety Certified & TBS Standard Compliant
               </p>
             </div>
           </div>
@@ -148,12 +148,10 @@ export default function Footer() {
         {/* Bottom copyright segment */}
         <div className="mt-16 pt-8 border-t border-emerald-900 flex flex-col sm:flex-row items-center justify-between text-xs text-emerald-300/70 gap-4">
           <p>
-            &copy; {currentYear} NITA FOOD PRODUCTS. All Rights Reserved. Manufactured in Tanzania.
+            &copy; {currentYear} NITA FOOD PRODUCTS. All Rights Reserved.
           </p>
           <p className="flex items-center gap-1">
-            <span>Made with</span>
-            <Heart className="w-3 h-3 text-orange-400 fill-orange-400" />
-            <span>promoting Tanzanian Agricultural Excellence</span>
+
           </p>
         </div>
       </div>

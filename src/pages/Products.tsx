@@ -83,12 +83,15 @@ export default function Products() {
     });
   }, [filteredProducts, sortBy]);
 
-  // Extract unique categories
-  const categories = useMemo(() => {
-    const unique = Array.from(new Set(products.map((p) => p.category).filter(Boolean)));
-    return ['All', ...unique];
-  }, [products]);
-
+  const [categories, setCategories] = useState<string[]>(['All']);
+  const [categoryError, setCategoryError] = useState('');
+  useEffect(() => {
+    fetch('/api/categories').then(async res => {
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data)) throw new Error('Unable to load categories.');
+      setCategories(['All', ...data.map(category => category.name)]);
+    }).catch(() => setCategoryError('Categories are temporarily unavailable. You can still browse all products.'));
+  }, []);
   const handleResetFilters = () => {
     setSearchQuery('');
     handleCategoryChange('All');
@@ -98,6 +101,7 @@ export default function Products() {
 
   return (
     <div className="bg-slate-50/50 min-h-screen" id="products-catalog-page">
+      {categoryError && <p role="status" className="p-4 text-center">{categoryError}</p>}
       {/* Header section */}
       <section className="relative py-16 sm:py-20 bg-emerald-950 text-white overflow-hidden">
         <div className="absolute inset-0">

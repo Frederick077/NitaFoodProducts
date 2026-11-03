@@ -1,0 +1,57 @@
+// Owner-provided copy: preserve wording, punctuation, emoji and serving counts.
+export const recipes = [
+  {
+    title: '🥤The Pumpkin Seed Power Smoothie',
+    desc: 'A nutrient-dense morning drink packed with plant protein, iron, and zinc. Perfect for busy parents, growing children, and pregnant or breastfeeding mothers.',
+    prepTime: '5 mins',
+    servings: '1',
+    ingredients: [
+      '2 tablespoons Pumpkin Seed Powder',
+      '1 tablespoon Chia Seeds',
+      '1 ripe banana (or a slice of sweet papaya)',
+      '1 cup of dairy milk',
+      '1 teaspoon of honey (optional)',
+    ],
+    instructions: [
+      'Add all ingredients into a blender.',
+      'Blend on high speed for 1 minute until completely smooth.',
+      'Pour into a glass and top with a sprinkle of Roasted Pumpkin Seeds for a nice crunch!',
+    ],
+    shopIngredients: ['Pumpkin Seed Powder', 'NITA Chia Seeds', 'Roasted Pumpkin Seeds'],
+  },
+  {
+    title: '🥣High-Nutrition Family Porridge',
+    desc: 'Transform ordinary family or baby porridge into a nutritional powerhouse to fight malnutrition and boost immunity.',
+    prepTime: '15 mins',
+    servings: '2-3',
+    ingredients: [
+      '3 tablespoons of Nita flour',
+      '2 tablespoons Pumpkin Powder (adds natural sweetness and Vitamin A)',
+      '2.5 cups of water or milk',
+    ],
+    instructions: [
+      'Mix all the flours together in a small bowl with half a cup of cold water until smooth.',
+      'Bring 2 cups of water or milk to a boil in a pot.',
+      'Pour the smooth flour paste into the boiling pot while stirring continuously to avoid lumps.',
+      'Simmer on low heat for 10–12 minutes, stirring occasionally. Serve warm.',
+    ],
+    shopIngredients: ['Nita flour', 'Pumpkin Powder'],
+  },
+  {
+    title: 'Crunchy Granola Yogurt Bowl 🍨',
+    desc: 'A quick, elegant, and highly satisfying breakfast or afternoon snack that gives long-lasting energy.',
+    prepTime: '3 mins',
+    servings: '1s',
+    ingredients: [
+      '1 cup of plain or vanilla yogurt (or traditional sour milk/mtindi)',
+      '½ cup Granola Cereals',
+      '1 tablespoon Sunflower Seeds or Sesame Seeds',
+    ],
+    instructions: [
+      'Scoop the yogurt into a clean breakfast bowl.',
+      'Generously layer the Granola Cereals on top.',
+      'Finish with a beautiful sprinkle of Sunflower seeds or Sesame seeds. Eat immediately while crunchy!',
+    ],
+    shopIngredients: ['Granola Cereals', 'Sunflower Seeds', 'Sesame Seeds'],
+  },
+];

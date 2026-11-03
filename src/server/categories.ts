@@ -9,7 +9,7 @@ export function categoryRoutes(requireAuth: RequestHandler, database = requireDa
     if (code === 'P2002') return res.status(409).json({ error: 'A category with this name already exists.' });
     if (code === 'P2003') return res.status(409).json({ error: 'Products use this category. Reassign them before deleting it.' });
     if (code === 'P2025') return res.status(404).json({ error: 'Category not found.' });
-    return res.status(503).json({ error: 'Categories are unavailable. Check the database connection and category migration.' });
+    return res.status(503).json({ error: 'Categories are temporarily unavailable.' });
   };
   const parseName = (value: unknown) => typeof value === 'string' ? value.trim() : '';
   router.get('/', async (_req, res) => {

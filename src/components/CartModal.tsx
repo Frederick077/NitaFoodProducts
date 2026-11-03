@@ -85,7 +85,7 @@ function OpenCartModal() {
               <div className="flex items-center rounded-xl border border-emerald-100">
                 <button type="button" aria-label={`Decrease quantity for ${item.productName}, ${item.variantName?.trim() || 'Standard'}`} disabled={item.quantity <= 1} onClick={() => changeQuantity(cartKey(item), item.quantity - 1)} className="rounded-l-xl p-3 text-emerald-800 hover:bg-emerald-50 disabled:opacity-30"><Minus className="h-4 w-4" /></button>
                 <span className="min-w-8 text-center text-sm font-bold text-emerald-950" aria-label="Quantity">{item.quantity}</span>
-                <button type="button" aria-label={`Increase quantity for ${item.productName}, ${item.variantName?.trim() || 'Standard'}`} disabled={item.quantity >= item.stock} onClick={() => changeQuantity(cartKey(item), item.quantity + 1)} className="rounded-r-xl p-3 text-emerald-800 hover:bg-emerald-50 disabled:opacity-30"><Plus className="h-4 w-4" /></button>
+                <button type="button" aria-label={`Increase quantity for ${item.productName}, ${item.variantName?.trim() || 'Standard'}`} disabled={item.quantity >= 100000} onClick={() => changeQuantity(cartKey(item), item.quantity + 1)} className="rounded-r-xl p-3 text-emerald-800 hover:bg-emerald-50 disabled:opacity-30"><Plus className="h-4 w-4" /></button>
               </div>
               <p className="text-xs text-gray-500">Subtotal: <strong className="text-emerald-950">{formatTZS(Math.round(item.unitPrice * 100) * item.quantity / 100)}</strong></p>
             </div>

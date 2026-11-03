@@ -24,7 +24,7 @@ export interface ProductVariant {
   price: number; // in TZS
   compareAtPrice?: number | null; // in TZS for strikethrough discount
   available: boolean;
-  stock: number;
+  stock?: number | null; // Legacy storage compatibility only; not used by website ordering.
   sku?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -36,6 +36,7 @@ export interface Category {
 }
 
 export interface Product {
+  publicationStatus?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   categoryId: string;
   id: string;
   name: string;
@@ -49,6 +50,9 @@ export interface Product {
   isFeatured: boolean;
   ingredients: string;
   benefits: string;
+  nutrients?: string;
+  nutritionBasis?: string;
+  howToUse?: string;
   images: ProductImage[];
   variants: ProductVariant[];
   // Convenience aliases for backward compatibility & easy access
@@ -64,6 +68,9 @@ export interface OrderItem {
   id: string; productId?: string | null; variantId?: string | null;
   productName: string; variantName: string; imageUrl: string;
   unitPrice: string | number | null; quantity: number; subtotal: string | number | null;
+}
+export interface PriceChange {
+  productId: string; variantId: string; quantity: number; previousPrice: number; currentPrice: number;
 }
 export interface Order {
   orderNumber?: string | null;
@@ -140,6 +147,8 @@ export interface AnalyticsSummary {
 export interface HeroSlide {
   id: string;
   imageUrl: string;
+  altText?: string;
+  imagePosition?: string;
   eyebrow: string;
   headline: string;
   ctaText: string;

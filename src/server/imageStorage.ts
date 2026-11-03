@@ -1,3 +1,5 @@
+import { imageExtension, uploadCategory } from './uploadValidation';
+import { logApiError } from './httpSecurity';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -23,7 +25,7 @@ export function validateCloudinaryConfig(): { configured: boolean; cloudName: st
   if (configured) {
     console.log(`[Storage] Cloudinary initialized successfully. Cloud: "${cloudName}".`);
   } else {
-    console.warn('[Storage] Cloudinary environment variables (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET) not fully set. Using local disk fallback.');
+    console.warn('[Storage] Cloudinary configuration is incomplete. Production uploads are disabled; local fallback is for development only.');
   }
   return { configured, cloudName };
 }
@@ -44,11 +46,11 @@ export function getCloudinaryClient() {
 
 // Ensure local uploads directory exists for local fallback or development
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
+if (process.env.NODE_ENV !== 'production' && !fs.existsSync(UPLOADS_DIR)) {
   try {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   } catch (err) {
-    console.warn('[Storage] Could not create uploads directory:', err);
+    logApiError('storage.directory', err);
   }
 }
 
@@ -63,11 +65,14 @@ export interface UploadResult {
  */
 export async function uploadImageFile(
   buffer: Buffer,
-  originalFilename: string,
+  _originalFilename: string,
   mimetype: string,
   category: string = 'general'
 ): Promise<UploadResult> {
+  const ext = imageExtension(buffer, mimetype);
+  category = uploadCategory(category);
   const cld = getCloudinaryClient();
+  if (!cld && process.env.NODE_ENV === 'production') throw new Error('Production image storage is unavailable.');
 
   if (cld) {
     return new Promise((resolve, reject) => {
@@ -84,8 +89,8 @@ export async function uploadImageFile(
         },
         (error, result) => {
           if (error || !result) {
-            console.error('[Cloudinary Upload Error]', error);
-            return reject(new Error(error?.message || 'Failed to upload image to Cloudinary'));
+            logApiError('image.upload', error);
+            return reject(new Error('Image storage is temporarily unavailable.'));
           }
 
           resolve({
@@ -101,7 +106,6 @@ export async function uploadImageFile(
   }
 
   // Fallback to local server disk storage
-  const ext = path.extname(originalFilename).toLowerCase() || getExtensionFromMime(mimetype) || '.jpg';
   const uniqueId = `nita_local_${category}_${crypto.randomBytes(8).toString('hex')}`;
   const filename = `${uniqueId}${ext}`;
   const filePath = path.join(UPLOADS_DIR, filename);
@@ -144,7 +148,7 @@ export async function deleteImageFile(publicId?: string | null, imageUrl?: strin
 
     if (cld && effectivePublicId) {
       const res = await cld.uploader.destroy(effectivePublicId);
-      console.log(`[Cloudinary] Asset destroyed: ${effectivePublicId}, result:`, res);
+      console.info('[Storage] Asset deletion completed.');
       return res.result === 'ok' || res.result === 'not found';
     }
 
@@ -165,24 +169,8 @@ export async function deleteImageFile(publicId?: string | null, imageUrl?: strin
       }
     }
   } catch (err) {
-    console.warn('[Storage] Error deleting asset:', err);
+    logApiError('storage.delete', err);
   }
 
   return false;
-}
-
-function getExtensionFromMime(mime: string): string {
-  switch (mime) {
-    case 'image/jpeg':
-    case 'image/jpg':
-      return '.jpg';
-    case 'image/png':
-      return '.png';
-    case 'image/webp':
-      return '.webp';
-    case 'image/avif':
-      return '.avif';
-    default:
-      return '.jpg';
-  }
 }

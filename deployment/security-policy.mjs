@@ -1,0 +1,19 @@
+// One policy for Express and Vercel's static/CDN response layer.
+export const commonSecurityHeaders = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+};
+export const productionCsp = [
+  "default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'none'",
+  "script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com", "img-src 'self' https: data: blob:",
+  "connect-src 'self'", "form-action 'self'",
+].join('; ');
+export const productionSecurityHeaders = {
+  ...commonSecurityHeaders,
+  'Content-Security-Policy': productionCsp,
+  'Strict-Transport-Security': 'max-age=15552000',
+};

@@ -13,7 +13,7 @@ test('cart merges identical variants, separates others and products, persists, u
  cart=updateCartQuantity(cart,cartKey(cart[0]),2);assert.equal(cart[0].quantity,2);
  assert.deepEqual(restoreCart(JSON.stringify(cart)),cart);
  assert.equal(cart.filter(i=>cartKey(i)!==cartKey(cart[0])).length,3);
- assert.throws(()=>addCartItem(cart,product,'v1',20));assert.throws(()=>updateCartQuantity(cart,cartKey(cart[0]),0));assert.throws(()=>addCartItem([], {...product,available:false},'v1',1));assert.deepEqual(restoreCart('{invalid'),[]);
+ assert.throws(()=>addCartItem(cart,product,'v1',100001));assert.throws(()=>updateCartQuantity(cart,cartKey(cart[0]),0));assert.throws(()=>addCartItem([], {...product,available:false},'v1',1));assert.deepEqual(restoreCart('{invalid'),[]);
 });
 test('checkout combines duplicate lines and rejects invalid quantities',()=>{
  assert.equal(validateItems([{productId:'a',variantId:'v1',quantity:1},{productId:'a',variantId:'v1',quantity:2}])[0].quantity,3);
@@ -33,7 +33,7 @@ test('one nested order write uses authoritative Decimal prices and immutable sna
  assert.equal(data.items.create[0].productName,'Original product');assert.equal(data.items.create[0].variantName,'Original variant / 250g');assert.equal(data.items.create[0].unitPrice.toString(),'10.15');
 });
 test('invalid or unavailable items prevent every write',async()=>{
- for(const items of [[{productId:'missing',variantId:'v1',quantity:1}],[{productId:'a',variantId:'wrong',quantity:1}],[{productId:'a',variantId:'v1',quantity:11}]]) {
+ for(const items of [[{productId:'missing',variantId:'v1',quantity:1}],[{productId:'a',variantId:'wrong',quantity:1}],[{productId:'a',variantId:'v1',quantity:100001}]]) {
  const {tx,writes}=transaction([product]);await assert.rejects(createCheckout(tx,{customerName:'Customer',phone:'123',items}));assert.equal(writes.length,0);
  }
 });
@@ -63,11 +63,11 @@ test('empty variant names preserve IDs and use size or Standard across cart and 
 test('variant editing retains IDs, creates only new rows, and archives only intentionally removed rows',()=>{
  const variant = {...product.variants[0],name:'Renamed',size:'New size',sku:'NEW',compareAtPrice:0};
  const result=buildVariantUpdate([variant,{...product.variants[1],id:undefined}],[{id:'v1'},{id:'removed'}]);
- assert.deepEqual(result.update,[{where:{id:'v1'},data:{name:'Renamed',size:'New size',sku:'NEW',compareAtPrice:0,price:10.15,stock:10,available:true}}]);
+ assert.deepEqual(result.update,[{where:{id:'v1'},data:{name:'Renamed',size:'New size',sku:'NEW',compareAtPrice:0,price:10.15,available:true}}]);
  assert.equal((result.create as unknown[]).length,1);
  assert.deepEqual(result.updateMany,{where:{id:{in:['removed']}},data:{available:false}});
  assert.equal(result.deleteMany,undefined);
  assert.throws(()=>buildVariantUpdate([{...variant,id:'foreign'}],[{id:'v1'}]));
  assert.throws(()=>buildVariantUpdate([variant,variant],[{id:'v1'}]));
- assert.throws(()=>buildVariantUpdate([{...variant,stock:-1}],[{id:'v1'}]));
+ assert.equal((buildVariantUpdate([{...variant,stock:-1}],[{id:'v1'}]).update as any[])[0].data.stock,undefined);
 });

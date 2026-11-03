@@ -1,3 +1,4 @@
+import { IMAGE_UPLOAD_MAX_BYTES, IMAGE_UPLOAD_LIMIT_LABEL } from '../uploadPolicy';
 import React, { useState, useRef } from 'react';
 import { Upload, X, CheckCircle, AlertCircle, Loader2, Image as ImageIcon } from 'lucide-react';
 
@@ -46,9 +47,9 @@ export default function ImageUploader({
       return;
     }
 
-    // Validate size (10 MB max)
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Image exceeds 10MB limit. Please upload a smaller file.');
+    // Validate size (4 MB max)
+    if (file.size > IMAGE_UPLOAD_MAX_BYTES) {
+      setError(`Image exceeds ${IMAGE_UPLOAD_LIMIT_LABEL} limit. Please upload a smaller file.`);
       return;
     }
 
@@ -259,7 +260,7 @@ export default function ImageUploader({
                 <p className="text-xs font-bold text-gray-800">
                   Click to browse <span className="font-normal text-gray-500">or drag & drop</span>
                 </p>
-                <p className="text-[11px] text-gray-400 mt-1">PNG, JPG, or WebP up to 10MB</p>
+                <p className="text-[11px] text-gray-400 mt-1">PNG, JPG, or WebP up to 4MB</p>
               </>
             )}
           </div>

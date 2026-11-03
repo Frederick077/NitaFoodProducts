@@ -57,6 +57,7 @@ export default function ImageManagementSection({
   const [activeGroup, setActiveGroup] = useState<ImageGroup>('production');
   const [siteImages, setSiteImages] = useState<SiteImage[]>([]);
   const [loadingSiteImages, setLoadingSiteImages] = useState(false);
+  const [siteImagesError, setSiteImagesError] = useState('');
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [storageStatus, setStorageStatus] = useState<{
@@ -99,22 +100,23 @@ export default function ImageManagementSection({
       fetch('/api/admin/images/status', {
         headers: { Authorization: `Bearer ${token}` },
       })
-        .then((r) => r.json())
+        .then(async (r) => { if (!r.ok) throw new Error('Storage status unavailable'); return r.json(); })
         .then((data) => setStorageStatus(data))
         .catch((err) => console.error('Error fetching storage status:', err));
     }
   }, [token]);
 
   const fetchSiteImages = async () => {
+    if (!token) return;
     setLoadingSiteImages(true);
+    setSiteImagesError('');
     try {
-      const res = await fetch('/api/site-images');
+      const res = await fetch('/api/admin/site-images', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
       const data = await res.json();
-      if (Array.isArray(data)) {
-        setSiteImages(data);
-      }
+      if (!res.ok || !Array.isArray(data)) throw new Error(data.error || 'Unable to load images.');
+      setSiteImages(data.sort((a: SiteImage, b: SiteImage) => a.position - b.position));
     } catch (err) {
-      console.error('Failed to load site images:', err);
+      setSiteImagesError(err instanceof Error ? err.message : 'Unable to load images.');
     } finally {
       setLoadingSiteImages(false);
     }
@@ -393,102 +395,29 @@ export default function ImageManagementSection({
     }
   };
 
-  // Product: Remove Primary Featured Image
+  const mediaRequest = async (url: string, method: string, body?: unknown) => {
+    const res = await fetch(url, { method, headers: { Authorization: 'Bearer ' + token, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Image changes could not be saved.');
+    window.dispatchEvent(new Event('nita-products-changed'));
+  };
   const handleRemoveProductFeaturedImage = async (prod: Product) => {
-    if (!window.confirm(`Remove primary featured image for "${prod.name}"?`)) return;
-    try {
-      const res = await fetch(`/api/products/${prod.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          ...prod,
-          featuredImageUrl: '',
-          featuredImagePublicId: '',
-        }),
-      });
-      if (!res.ok) throw new Error('Failed to remove featured image.');
-      notifySuccess('Featured image removed.');
-      onRefreshData();
-    } catch (err: any) {
-      notifyError(err.message || 'Failed to remove featured image.');
-    }
+    if (!window.confirm('Remove this featured image reference? The stored asset will be retained.')) return;
+    try { await mediaRequest('/api/admin/products/' + prod.id + '/featured-image', 'PUT', { imageUrl: '', storagePublicId: '' }); notifySuccess('Featured reference removed; stored asset retained.'); onRefreshData(); }
+    catch (e) { notifyError((e as Error).message); }
   };
-
-  // Product: Delete Additional Angle Image
-  const handleDeleteProductImage = async (prod: Product, imageId?: string, imageUrl?: string, storagePublicId?: string) => {
-    if (!window.confirm('Delete this product additional image? It will be removed from Cloudinary and the database.')) return;
-    try {
-      if (imageId) {
-        const res = await fetch(`/api/admin/products/${prod.id}/images/${imageId}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error('Failed to delete image.');
-      } else {
-        const updatedImages = (prod.images || []).filter((img) => img.imageUrl !== imageUrl);
-        const res = await fetch(`/api/products/${prod.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            ...prod,
-            images: updatedImages,
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to delete image.');
-      }
-      notifySuccess('Product angle deleted.');
-      onRefreshData();
-    } catch (err: any) {
-      notifyError(err.message || 'Failed to delete product image.');
-    }
+  const handleDeleteProductImage = async (prod: Product, imageId?: string, _url?: string, _storage?: string) => {
+    if (!imageId) { notifyError('Refresh the product to obtain the saved image ID.'); return; }
+    if (!window.confirm('Remove this additional image reference? The stored asset will be retained.')) return;
+    try { await mediaRequest('/api/admin/products/' + prod.id + '/images/' + imageId, 'DELETE'); notifySuccess('Image reference removed; stored asset retained.'); onRefreshData(); }
+    catch (e) { notifyError((e as Error).message); }
   };
-
-  // Product: Reorder Additional Angles
   const handleMoveProductImage = async (prod: Product, index: number, direction: -1 | 1) => {
-    const list = [...(prod.images || [])];
-    const targetIdx = index + direction;
-    if (targetIdx < 0 || targetIdx >= list.length) return;
-
-    const temp = list[index];
-    list[index] = list[targetIdx];
-    list[targetIdx] = temp;
-
-    const reordered = list.map((item, idx) => ({
-      ...item,
-      position: idx,
-    }));
-
-    try {
-      const res = await fetch(`/api/admin/products/${prod.id}/images/reorder`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ items: reordered }),
-      });
-      if (!res.ok) {
-        // Fallback to updating product
-        await fetch(`/api/products/${prod.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ ...prod, images: reordered }),
-        });
-      }
-      notifySuccess('Product angle order updated.');
-      onRefreshData();
-    } catch (err: any) {
-      notifyError(err.message || 'Failed to reorder images.');
-    }
+    const rows = [...prod.images], next = index + direction;
+    if (next < 0 || next >= rows.length) return;
+    [rows[index], rows[next]] = [rows[next], rows[index]];
+    try { await mediaRequest('/api/admin/products/' + prod.id + '/images/reorder', 'PUT', { items: rows.map(i => ({ id: i.id })) }); notifySuccess('Image order saved.'); onRefreshData(); }
+    catch (e) { notifyError((e as Error).message); }
   };
 
   // Add Image to Product (Featured or Additional Angle)
@@ -502,49 +431,9 @@ export default function ImageManagementSection({
 
     setIsSubmitting(true);
     try {
-      if (isPrimaryFeatured) {
-        const res = await fetch(`/api/products/${selectedProduct.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            ...selectedProduct,
-            featuredImageUrl: prodUploadedUrl,
-            featuredImagePublicId: prodUploadedPublicId,
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to update product featured image.');
-      } else {
-        const currentImages = selectedProduct.images || [];
-        const res = await fetch(`/api/products/${selectedProduct.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            ...selectedProduct,
-            images: [
-              ...currentImages.map((img) => ({
-                id: img.id,
-                imageUrl: img.imageUrl,
-                storagePublicId: img.storagePublicId,
-                altText: img.altText,
-                position: img.position,
-              })),
-              {
-                imageUrl: prodUploadedUrl,
-                storagePublicId: prodUploadedPublicId,
-                altText: prodAltText || selectedProduct.name,
-                position: currentImages.length,
-              },
-            ],
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to add product image.');
-      }
+      await mediaRequest('/api/admin/products/' + selectedProduct.id + (isPrimaryFeatured ? '/featured-image' : '/images'), isPrimaryFeatured ? 'PUT' : 'POST', {
+        imageUrl: prodUploadedUrl, storagePublicId: prodUploadedPublicId, altText: prodAltText || selectedProduct.name,
+      });
 
       notifySuccess('Product image saved successfully.');
       setProductImageModalOpen(false);
@@ -565,14 +454,14 @@ export default function ImageManagementSection({
       {actionSuccess && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl flex items-center gap-3 text-sm font-medium shadow-xs">
           <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{actionSuccess}</span>
+          <span role="status">{actionSuccess}</span>
         </div>
       )}
 
       {actionError && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-2xl flex items-center gap-3 text-sm font-medium shadow-xs">
           <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
-          <span>{actionError}</span>
+          <span role="alert">{actionError}</span>
         </div>
       )}
 
@@ -582,7 +471,7 @@ export default function ImageManagementSection({
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs font-bold">
               <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              <span>PostgreSQL & Cloudinary Storage</span>
+              <span>Media storage</span>
             </div>
             {storageStatus?.configured ? (
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100/80 border border-emerald-300 text-emerald-900 text-xs font-bold">
@@ -593,16 +482,13 @@ export default function ImageManagementSection({
             ) : (
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
                 <span className="w-2 h-2 rounded-full bg-amber-500" />
-                <span>Local Storage Fallback</span>
+                <span>{storageStatus ? 'Local storage' : 'Storage status unavailable'}</span>
               </div>
             )}
           </div>
           <h2 className="text-2xl font-extrabold text-emerald-950 font-sans tracking-tight">
-            Image Management System
+            Images
           </h2>
-          <p className="text-xs text-gray-500 max-w-2xl">
-            Upload, optimize, and manage imagery for all 5 core website image groups. Uploads are stored securely in external image storage and synchronized with PostgreSQL via Prisma.
-          </p>
         </div>
 
         {/* Global Action Button per Group */}
@@ -630,7 +516,7 @@ export default function ImageManagementSection({
               id="admin-add-site-image-btn"
             >
               <Plus className="w-4 h-4" />
-              <span>Add {activeGroup === 'production' ? 'Production' : activeGroup === 'factory' ? 'Factory' : 'Certification'} Image</span>
+              <span>Add {activeGroup === 'production' ? 'Production' : activeGroup === 'factory' ? 'Factory' : 'Quality'} Image</span>
             </button>
           ) : null}
         </div>
@@ -657,9 +543,6 @@ export default function ImageManagementSection({
           </div>
           <div>
             <p className="text-xs font-extrabold font-sans">1. Product Images</p>
-            <p className={`text-[10px] ${activeGroup === 'products' ? 'text-emerald-200/70' : 'text-gray-400'}`}>
-              Featured & gallery photos
-            </p>
           </div>
         </button>
 
@@ -682,9 +565,6 @@ export default function ImageManagementSection({
           </div>
           <div>
             <p className="text-xs font-extrabold font-sans">2. Gallery Images</p>
-            <p className={`text-[10px] ${activeGroup === 'gallery' ? 'text-emerald-200/70' : 'text-gray-400'}`}>
-              Events, customers, packaging
-            </p>
           </div>
         </button>
 
@@ -707,9 +587,6 @@ export default function ImageManagementSection({
           </div>
           <div>
             <p className="text-xs font-extrabold font-sans">3. Production Section</p>
-            <p className={`text-[10px] ${activeGroup === 'production' ? 'text-emerald-200/70' : 'text-gray-400'}`}>
-              Hulling, sorting & roasting
-            </p>
           </div>
         </button>
 
@@ -732,9 +609,6 @@ export default function ImageManagementSection({
           </div>
           <div>
             <p className="text-xs font-extrabold font-sans">4. Factory Section</p>
-            <p className={`text-[10px] ${activeGroup === 'factory' ? 'text-emerald-200/70' : 'text-gray-400'}`}>
-              Industrial plant & machinery
-            </p>
           </div>
         </button>
 
@@ -757,9 +631,6 @@ export default function ImageManagementSection({
           </div>
           <div>
             <p className="text-xs font-extrabold font-sans">5. Quality & Certs</p>
-            <p className={`text-[10px] ${activeGroup === 'quality' ? 'text-emerald-200/70' : 'text-gray-400'}`}>
-              TBS, lab & organic seals
-            </p>
           </div>
         </button>
       </div>
@@ -772,11 +643,8 @@ export default function ImageManagementSection({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
             <div>
               <h3 className="text-lg font-extrabold text-emerald-950 font-sans">
-                Product Image Catalog
+                Product images
               </h3>
-              <p className="text-xs text-gray-500">
-                Manage featured images and secondary gallery shots for each manufactured food product.
-              </p>
             </div>
           </div>
 
@@ -941,9 +809,6 @@ export default function ImageManagementSection({
               <h3 className="text-lg font-extrabold text-emerald-950 font-sans">
                 Gallery Photos ({gallery.length})
               </h3>
-              <p className="text-xs text-gray-500">
-                Visual tour photos displayed on the public Gallery page categorized by theme.
-              </p>
             </div>
           </div>
 
@@ -1034,27 +899,28 @@ export default function ImageManagementSection({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
             <div>
               <h3 className="text-lg font-extrabold text-emerald-950 font-sans">
-                {activeGroup === 'production' && 'Production Process Section Images'}
-                {activeGroup === 'factory' && 'Factory Facility Section Images'}
-                {activeGroup === 'quality' && 'Quality & Certifications Section Images'}
+                {activeGroup === 'production' && 'Production images'}
+                {activeGroup === 'factory' && 'Operations images'}
+                {activeGroup === 'quality' && 'Quality & certification images'}
               </h3>
               <p className="text-xs text-gray-500">
-                {activeGroup === 'production' && 'Photographs corresponding to the 4-step sorting, hulling, roasting, and packaging process.'}
-                {activeGroup === 'factory' && 'Industrial plant and manufacturing facility visuals displayed on corporate pages.'}
-                {activeGroup === 'quality' && 'TBS certifications, lab inspections, and food hygiene verification photos.'}
+                {activeGroup === 'production' && 'Used on Home, About Us, Our Story and Sustainability.'}
+                {activeGroup === 'factory' && 'The first enabled image is used on Home, About Us and Our Story.'}
+                {activeGroup === 'quality' && 'Managed here; not currently displayed publicly. Confirm authorization before publication.'}
               </p>
             </div>
           </div>
 
+          {siteImagesError && <div role="alert" className="text-sm text-red-700"><p>{siteImagesError}</p><button type="button" onClick={() => void fetchSiteImages()} className="underline">Retry loading images</button></div>}
           {loadingSiteImages ? (
             <div className="py-16 text-center">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto mb-2" />
-              <p className="text-xs text-gray-500">Loading section images from database...</p>
+              <p className="text-xs text-gray-500">Loading images...</p>
             </div>
-          ) : currentSectionImages.length === 0 ? (
+          ) : siteImagesError ? null : currentSectionImages.length === 0 ? (
             <div className="py-16 text-center border-2 border-dashed border-gray-200 rounded-3xl">
               <ImageIcon className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-              <p className="text-xs font-bold text-gray-500">No images configured for this section yet.</p>
+              <p className="text-xs font-bold text-gray-500">No images yet.</p>
               <button
                 onClick={handleOpenCreateSiteImage}
                 className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 text-white rounded-xl text-xs font-bold hover:bg-emerald-800 transition"
@@ -1081,9 +947,9 @@ export default function ImageManagementSection({
                       <span className="bg-emerald-950/80 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full backdrop-blur-xs">
                         Pos #{img.position}
                       </span>
-                      {activeGroup === 'factory' && (idx === 0 || img.position === 0) && (
+                      {activeGroup === 'factory' && img.enabled && currentSectionImages.find(image => image.enabled)?.id === img.id && (
                         <span className="bg-emerald-700 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-xs">
-                          Primary Facility
+                          Primary image
                         </span>
                       )}
                       {!img.enabled && (
@@ -1191,7 +1057,7 @@ export default function ImageManagementSection({
                 currentPublicId={modalPublicId}
                 category={activeGroup}
                 label="Choose Image File"
-                recommendedDimensions="Recommended: 1200x800, High Resolution"
+                recommendedDimensions="Recommended: 1200 x 800"
                 onUploadSuccess={({ imageUrl, publicId }) => {
                   setModalImageUrl(imageUrl);
                   setModalPublicId(publicId);
@@ -1204,13 +1070,13 @@ export default function ImageManagementSection({
 
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1">
-                  Title / Step Name
+                  Title
                 </label>
                 <input
                   type="text"
                   value={modalTitle}
                   onChange={(e) => setModalTitle(e.target.value)}
-                  placeholder="e.g. Step 1: Pre-Sorting & Quality Grading"
+                  placeholder="Photograph title"
                   className="w-full text-xs px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   required
                 />
@@ -1218,13 +1084,13 @@ export default function ImageManagementSection({
 
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1">
-                  Alt Text (for accessibility & SEO)
+                  Alt text (accessibility)
                 </label>
                 <input
                   type="text"
                   value={modalAltText}
                   onChange={(e) => setModalAltText(e.target.value)}
-                  placeholder="e.g. Hands-free automated hulling machinery"
+                  placeholder="Describe what the photograph shows"
                   className="w-full text-xs px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
               </div>
@@ -1232,7 +1098,7 @@ export default function ImageManagementSection({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-gray-700 block mb-1">
-                    Display Position / Order
+                    Display order
                   </label>
                   <input
                     type="number"
@@ -1340,7 +1206,7 @@ export default function ImageManagementSection({
                   type="text"
                   value={galTitle}
                   onChange={(e) => setGalTitle(e.target.value)}
-                  placeholder="e.g. Aseptic Nitrogen Pouch Sealing"
+                  placeholder="Photograph title"
                   className="w-full text-xs px-3.5 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
               </div>

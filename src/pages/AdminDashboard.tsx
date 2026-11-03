@@ -37,30 +37,31 @@ interface AdminDashboardProps {
   token: string | null;
   onLoginSuccess: (token: string, user: { name: string; email: string; role: 'Admin' }) => void;
   userRole: 'Admin' | null;
+  onLogout: () => void;
 }
 
 interface VariantFormState {
   id?: string;
   name: string;
   size: string;
-  price: number;
+  price: number | '';
   compareAtPrice: number | '';
   available: boolean;
-  stock: number;
   sku: string;
 }
 
 interface ImageFormState {
+  storagePublicId?: string;
   id?: string;
   imageUrl: string;
   altText: string;
   position: number;
 }
 
-export default function AdminDashboard({ token, onLoginSuccess, userRole }: AdminDashboardProps) {
+export default function AdminDashboard({ token, onLoginSuccess, userRole, onLogout }: AdminDashboardProps) {
   // Login State
-  const [email, setEmail] = useState('admin@nitafoods.local');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -97,6 +98,9 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [publicationStatus, setPublicationStatus] = useState<'DRAFT' | 'PUBLISHED' | 'ARCHIVED'>('DRAFT');
+  const [productPreview, setProductPreview] = useState<Product | null>(null);
+  const [productFeedback, setProductFeedback] = useState('');
   
   // Product Form Fields
   const [prodName, setProdName] = useState('');
@@ -109,11 +113,21 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
   const [prodAvailable, setProdAvailable] = useState(true);
   const [prodIsFeatured, setProdIsFeatured] = useState(false);
   const [prodIngredients, setProdIngredients] = useState('');
+  const [prodNutrients, setProdNutrients] = useState('');
+  const [prodNutritionBasis, setProdNutritionBasis] = useState('');
+  const [prodHowToUse, setProdHowToUse] = useState('');
   const [prodBenefits, setProdBenefits] = useState('');
   const [prodImages, setProdImages] = useState<ImageFormState[]>([]);
   const [prodVariants, setProdVariants] = useState<VariantFormState[]>([
-    { name: '250g Pouch', size: '250g', price: 10000, compareAtPrice: '', available: true, stock: 50, sku: '' }
+    { name: '', size: '', price: '', compareAtPrice: '', available: true, sku: '' }
   ]);
+
+  const formSignature = JSON.stringify([publicationStatus,prodName,prodSlug,prodShortDesc,prodDesc,prodCategory,prodFeaturedImage,prodFeaturedPublicId,prodAvailable,prodIsFeatured,prodIngredients,prodBenefits,prodNutrients,prodNutritionBasis,prodHowToUse,prodImages,prodVariants]);
+  const [initialForm, setInitialForm] = useState('');
+  useEffect(() => { if (isAddingProduct || editingProduct) setInitialForm(formSignature); }, [isAddingProduct, editingProduct?.id]);
+  const formDirty = (isAddingProduct || !!editingProduct) && initialForm !== formSignature;
+  useEffect(() => { const warn = (e: BeforeUnloadEvent) => { if (formDirty) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn); }, [formDirty]);
+  const closeProductForm = () => { if (formDirty && !window.confirm('Discard unsaved product changes? Uploaded assets will be retained.')) return; setIsAddingProduct(false); setEditingProduct(null); };
 
   // Gallery Add Form State
   const [galImage, setGalImage] = useState('');
@@ -151,7 +165,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
       else setOrderError(ordData.error || 'Unable to load orders.');
 
       // Gallery
-      const galRes = await fetch('/api/gallery');
+      const galRes = await fetch('/api/admin/gallery', { headers });
       const galData = await galRes.json();
       if (!galData.error) setGallery(galData);
 
@@ -201,11 +215,13 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
     setProdFeaturedPublicId('');
     setProdAvailable(true);
     setProdIsFeatured(false);
+    setPublicationStatus('DRAFT');
     setProdIngredients('');
     setProdBenefits('');
+    setProdNutrients(''); setProdNutritionBasis(''); setProdHowToUse('');
     setProdImages([]);
     setProdVariants([
-      { name: '250g Pouch', size: '250g', price: 10000, compareAtPrice: '', available: true, stock: 50, sku: '' }
+      { name: '', size: '', price: '', compareAtPrice: '', available: true, sku: '' }
     ]);
   };
 
@@ -220,19 +236,20 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
     setProdFeaturedPublicId(p.featuredImagePublicId || '');
     setProdAvailable(p.available !== false);
     setProdIsFeatured(Boolean(p.isFeatured));
+    setPublicationStatus(p.publicationStatus || 'PUBLISHED');
     setProdIngredients(p.ingredients || '');
     setProdBenefits(p.benefits || '');
+    setProdNutrients(p.nutrients || ''); setProdNutritionBasis(p.nutritionBasis || ''); setProdHowToUse(p.howToUse || '');
 
     // Set images
     if (p.images && p.images.length > 0) {
       setProdImages(p.images.map((img, idx) => ({
         id: img.id,
         imageUrl: img.imageUrl,
+        storagePublicId: img.storagePublicId,
         altText: img.altText || '',
         position: img.position ?? idx
       })));
-    } else if (p.featuredImageUrl || p.image) {
-      setProdImages([{ imageUrl: p.featuredImageUrl || p.image || '', altText: p.name, position: 0 }]);
     } else {
       setProdImages([]);
     }
@@ -243,22 +260,13 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         id: v.id,
         name: v.name,
         size: v.size,
-        price: v.price,
+        price: typeof v.price === 'number' && Number.isFinite(v.price) ? v.price : '',
         compareAtPrice: v.compareAtPrice ?? '',
         available: v.available,
-        stock: v.stock,
         sku: v.sku || ''
       })));
     } else {
-      setProdVariants(p.sizes.map((s, idx) => ({
-        name: s,
-        size: s,
-        price: p.price || 10000,
-        compareAtPrice: '',
-        available: true,
-        stock: 50,
-        sku: `SKU-${idx}`
-      })));
+      setProdVariants([{ name: '', size: '', price: '', compareAtPrice: '', available: true, sku: '' }]);
     }
   };
 
@@ -266,22 +274,14 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
   const handleAddVariantRow = () => {
     setProdVariants([
       ...prodVariants,
-      {
-        name: `Pack Size ${prodVariants.length + 1}`,
-        size: '500g',
-        price: 15000,
-        compareAtPrice: '',
-        available: true,
-        stock: 50,
-        sku: ''
-      }
+      { name: '', size: '', price: '', compareAtPrice: '', available: true, sku: '' }
     ]);
   };
 
   // Remove Variant Row
   const handleRemoveVariantRow = (index: number) => {
     if (prodVariants.length <= 1) return;
-    setProdVariants(prodVariants.filter((_, i) => i !== index));
+    setProdVariants(prodVariants.flatMap((v, i) => i !== index ? [v] : v.id ? [{ ...v, available: false }] : []));
   };
 
   // Update Variant Row
@@ -305,7 +305,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
   // Update Image Row
   const handleUpdateImageField = (index: number, field: keyof ImageFormState, value: any) => {
     const updated = [...prodImages];
-    updated[index] = { ...updated[index], [field]: value };
+    updated[index] = { ...updated[index], [field]: value, ...(field === 'imageUrl' ? { storagePublicId: '' } : {}) };
     setProdImages(updated);
   };
 
@@ -314,6 +314,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
     e.preventDefault();
     if (!prodName || !prodDesc || prodVariants.length === 0) return;
 
+    setProductFeedback('');
     setIsSavingProduct(true);
     try {
       const payload = {
@@ -326,20 +327,36 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         featuredImagePublicId: prodFeaturedPublicId || '',
         available: prodAvailable,
         isFeatured: prodIsFeatured,
+        publicationStatus,
         ingredients: prodIngredients,
         benefits: prodBenefits,
+        nutrients: prodNutrients, nutritionBasis: prodNutritionBasis, howToUse: prodHowToUse,
         images: prodImages.filter(img => img.imageUrl.trim() !== ''),
-        variants: prodVariants.map(v => ({
+        variants: prodVariants.map(v => {
+          if (v.price === '') throw new Error('Enter an explicit price for every variant.');
+          return ({
           id: v.id,
           name: v.name.trim(),
           size: v.size.trim(),
-          price: Number(v.price) || 0,
+          price: v.price,
           compareAtPrice: v.compareAtPrice === '' ? null : Number(v.compareAtPrice),
           available: v.available,
-          stock: Number(v.stock) || 0,
           sku: v.sku || ''
-        }))
+        }); })
       };
+
+      const imageFields = (rows: ProductImage[]) => rows.map(i => ({ id:i.id, imageUrl:i.imageUrl, storagePublicId:i.storagePublicId || '', altText:i.altText || '', position:i.position }));
+      const variantFields = (rows: ProductVariant[]) => rows.map(v => ({ id:v.id, name:v.name.trim(),size:v.size.trim(),price:v.price,compareAtPrice:v.compareAtPrice ?? null,available:v.available,sku:v.sku || '' }));
+      const submitted: Record<string, unknown> = { ...payload };
+      if (editingProduct) {
+        for (const key of Object.keys(submitted)) {
+          const old = key === 'images' ? imageFields(editingProduct.images) : key === 'variants' ? variantFields(editingProduct.variants) : (editingProduct as any)[key];
+          const value = key === 'images' ? imageFields(payload.images as ProductImage[]) : submitted[key];
+          if (JSON.stringify(value) === JSON.stringify(old)) delete submitted[key];
+        }
+      }
+
+      if (editingProduct && submitted.images !== undefined) submitted.removedImageIds = editingProduct.images.filter(i => !payload.images.some(row => row.id === i.id)).map(i => i.id);
 
       const url = editingProduct ? `/api/products/${editingProduct.id}` : '/api/products';
       const method = editingProduct ? 'PUT' : 'POST';
@@ -350,7 +367,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(submitted)
       });
 
       if (!res.ok) { const data = await res.json(); throw new Error(data.error || 'Product save failed'); }
@@ -358,10 +375,12 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         setIsAddingProduct(false);
         setEditingProduct(null);
         resetProductForm();
+        window.dispatchEvent(new Event('nita-products-changed'));
+        setProductFeedback('Product saved.');
         fetchAdminData();
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Product save failed');
+      setProductFeedback(err instanceof Error ? err.message : 'Product save failed');
     } finally {
       setIsSavingProduct(false);
     }
@@ -467,11 +486,8 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
             </div>
             <div className="space-y-1.5">
               <h2 className="text-2xl font-bold text-gray-900 font-sans tracking-tight">
-                Secure Portal Login
+                Admin login
               </h2>
-              <p className="text-xs text-gray-500">
-                Staff portal for NITA Food Products administrator
-              </p>
             </div>
           </div>
 
@@ -484,29 +500,33 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                Staff Email Address
+              <label htmlFor="admin-email" className="block text-xs font-semibold text-gray-700 mb-1.5">
+                Email address
               </label>
               <div className="relative">
                 <input
+                  id="admin-email"
                   type="email"
+                  autoComplete="username"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-emerald-500 focus:ring-emerald-500"
-                  placeholder="admin@nitafoods.local"
+                  placeholder="Enter your email address"
                 />
                 <User className="absolute left-3.5 top-3 w-4 h-4 text-gray-400" />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+              <label htmlFor="admin-password" className="block text-xs font-semibold text-gray-700 mb-1.5">
                 Password
               </label>
               <div className="relative">
                 <input
+                  id="admin-password"
                   type="password"
+                  autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -526,27 +546,6 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
             </button>
           </form>
 
-          {/* Seed Testing account Helper */}
-          <div className="pt-6 border-t border-gray-100 space-y-2 text-center">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full">
-              Administrator Access
-            </span>
-            <div className="text-[11px] text-gray-500 text-left pt-2">
-              <div 
-                onClick={() => { setEmail('admin@nitafoods.local'); setPassword('admin123'); }}
-                className="bg-gray-50 p-3 rounded-xl border border-gray-100 hover:border-emerald-200 cursor-pointer transition flex items-center justify-between"
-              >
-                <div>
-                  <p className="font-bold text-emerald-950">Role: Admin</p>
-                  <p className="font-mono text-[10px] mt-0.5 text-gray-600">Email: admin@nitafoods.local</p>
-                  <p className="font-mono text-[10px] text-gray-600">Pass: admin123</p>
-                </div>
-                <span className="text-xs text-emerald-600 font-medium bg-white px-2.5 py-1 rounded-lg border border-emerald-100 shadow-xs">
-                  Autofill
-                </span>
-              </div>
-            </div>
-          </div>
 
         </div>
       </div>
@@ -564,20 +563,22 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-100 pb-6 mb-8 gap-4">
           <div className="space-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold text-emerald-950 font-sans tracking-tight">
-              Administrative Dashboard
+              Dashboard
             </h1>
             <p className="text-xs text-gray-500">
-              Role: <span className="font-bold text-emerald-700">{userRole}</span> (PostgreSQL & Prisma Backend)
+              Role: <span className="font-bold text-emerald-700">{userRole}</span>
             </p>
           </div>
+
+          <button type="button" onClick={onLogout} className="text-sm font-semibold text-emerald-800 underline underline-offset-4">Sign out</button>
 
           {/* Quick Tab Select */}
           <div className="flex flex-wrap gap-1.5 bg-gray-100 p-1 rounded-2xl border border-gray-200/50">
             {[
               { id: 'overview', label: 'Overview', icon: BarChart3 },
-              { id: 'images', label: 'Image Management', icon: Sparkles },
-              { id: 'categories', label: 'Product Categories', icon: Layers },
-              { id: 'products', label: 'Products & Variants', icon: ShoppingBag },
+              { id: 'images', label: 'Images', icon: Sparkles },
+              { id: 'categories', label: 'Categories', icon: Layers },
+              { id: 'products', label: 'Products', icon: ShoppingBag },
               { id: 'orders', label: 'Orders', icon: ClipboardCheck },
               { id: 'gallery', label: 'Gallery', icon: ImageIcon },
               { id: 'messages', label: 'Messages', icon: MessageSquare }
@@ -661,7 +662,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
               <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
                 <h3 className="font-bold text-base text-gray-900 flex items-center space-x-1.5 border-b border-gray-100 pb-2">
                   <TrendingUp className="w-4 h-4 text-emerald-600" />
-                  <span>Popular Products View Count</span>
+                  <span>Product views</span>
                 </h3>
                 <div className="space-y-3.5">
                   {Object.entries(stats.popularProducts || {}).map(([pId, count]: any) => {
@@ -684,7 +685,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
               <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
                 <h3 className="font-bold text-base text-gray-900 flex items-center space-x-1.5 border-b border-gray-100 pb-2">
                   <Layers className="w-4 h-4 text-orange-500" />
-                  <span>Most Visited Website Pages</span>
+                  <span>Page views</span>
                 </h3>
                 <div className="space-y-3.5">
                   {Object.entries(stats.pageViews || {}).map(([page, count]: any) => (
@@ -718,14 +719,13 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
 
         {activeTab === 'products' && (
           <div className="space-y-8" id="products-dashboard-view">
+            {productFeedback && <p role="status">{productFeedback}</p>}
+            {productPreview && <section aria-label="Private saved product preview" className="border p-4 my-4"><button type="button" onClick={() => setProductPreview(null)}>Close preview</button><p>Private preview - {productPreview.publicationStatus}</p><h2>{productPreview.name}</h2><p>{productPreview.description}</p>{productPreview.featuredImageUrl && <img src={productPreview.featuredImageUrl} alt={productPreview.name} className="max-h-64 object-contain" />}{productPreview.variants.map(v => <p key={v.id}>{v.name || v.size}: {formatTZS(v.price)} - {v.available ? 'Active' : 'Inactive'}</p>)}</section>}
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="font-bold text-lg text-emerald-950 font-sans tracking-tight">
-                  Product Catalog & Variant System
+                  Products
                 </h3>
-                <p className="text-xs text-gray-500">
-                  Manage rich products with multiple high-res images and size/price variants
-                </p>
               </div>
               <button
                 onClick={() => {
@@ -736,25 +736,21 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                 className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-700/20"
               >
                 <Plus className="w-4 h-4" />
-                <span>Add New Product</span>
+                <span>Add product</span>
               </button>
             </div>
 
             {/* Product Add or Edit Modal Overlays */}
             {(isAddingProduct || editingProduct) && (
-              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-emerald-200 shadow-lg text-xs space-y-6">
+              <div className="min-w-0 bg-white p-6 sm:p-8 rounded-3xl border border-emerald-200 shadow-lg text-xs space-y-6">
                 <div className="flex justify-between items-center border-b border-gray-100 pb-4">
                   <div>
                     <h4 className="font-extrabold text-base text-emerald-950">
-                      {editingProduct ? `Edit Product: ${editingProduct.name}` : 'Create Brand New Dynamic Product'}
+                      {editingProduct ? `Edit Product: ${editingProduct.name}` : 'New product'}
                     </h4>
-                    <p className="text-[11px] text-gray-500">Configure core product details, gallery images, and size/price variants</p>
                   </div>
                   <button
-                    onClick={() => {
-                      setIsAddingProduct(false);
-                      setEditingProduct(null);
-                    }}
+                    onClick={closeProductForm}
                     className="p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500"
                   >
                     <X className="w-4 h-4" />
@@ -787,7 +783,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                           {categories.map(category => <option key={category.id} value={category.id}>{category.name || 'Unnamed legacy category'}</option>)}
                         </select>
                         {categoryError && <p role="alert">{categoryError}</p>}
-                        {!categories.length && <p>Create a category in Product Categories first.</p>}
+                        {!categories.length && <p>Create a category in Categories first.</p>}
                       </div>
 
                       <div>
@@ -804,7 +800,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                           token={token}
                           currentImageUrl={prodFeaturedImage}
                           category="products"
-                          label="Primary Featured Product Image"
+                          label="Featured image"
                           recommendedDimensions="Square 800x800 recommended"
                           onUploadSuccess={({ imageUrl, publicId }) => {
                             setProdFeaturedImage(imageUrl);
@@ -818,7 +814,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                         <div className="mt-1.5 flex items-center gap-2">
                           <span className="text-[10px] text-gray-400">or Direct URL:</span>
                           <input 
-                            type="text" value={prodFeaturedImage} onChange={e => setProdFeaturedImage(e.target.value)}
+                            type="text" value={prodFeaturedImage} onChange={e => { setProdFeaturedImage(e.target.value); setProdFeaturedPublicId(''); }}
                             className="flex-1 bg-gray-50/50 rounded-lg border border-gray-200 px-2.5 py-1 text-[11px]"
                             placeholder="https://... or auto-filled upon upload"
                           />
@@ -839,7 +835,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                         <textarea 
                           required rows={3} value={prodDesc} onChange={e => setProdDesc(e.target.value)}
                           className="w-full bg-gray-50/50 rounded-xl border border-gray-200 px-3.5 py-2 text-xs"
-                          placeholder="Comprehensive description of harvesting, taste, and packaging..."
+                          placeholder="Product description"
                         />
                       </div>
 
@@ -853,11 +849,11 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                       </div>
 
                       <div>
-                        <label className="block font-bold text-gray-700 mb-1">Health Benefits</label>
+                        <label className="block font-bold text-gray-700 mb-1">Approved product benefits</label>
                         <textarea 
                           rows={2} value={prodBenefits} onChange={e => setProdBenefits(e.target.value)}
                           className="w-full bg-gray-50/50 rounded-xl border border-gray-200 px-3.5 py-2 text-xs"
-                          placeholder="High in zinc, magnesium, antioxidants..."
+                          placeholder="Approved product benefits only"
                         />
                       </div>
 
@@ -869,7 +865,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                             onChange={(e) => setProdAvailable(e.target.checked)}
                             className="w-4 h-4 text-emerald-600 rounded"
                           />
-                          <span className="font-bold text-gray-800">Product Available in Store</span>
+                          <span className="font-bold text-gray-800">Product Enable ordering</span>
                         </label>
 
                         <label className="flex items-center space-x-2 cursor-pointer">
@@ -885,6 +881,12 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                     </div>
                   </div>
 
+                  <label className="block my-4">Publication status<select value={publicationStatus} onChange={e => setPublicationStatus(e.target.value as typeof publicationStatus)} className="block w-full min-w-0 max-w-full border p-2"><option value="DRAFT">Draft - private</option><option value="PUBLISHED">Published - public</option><option value="ARCHIVED">Archived - private, not purchasable</option></select></label>
+                  <fieldset className="space-y-3"><legend className="font-bold">Approved product information (optional)</legend><p>Use approved label text. Leave unknown details blank; include the nutrition basis and units.</p>
+                    <label className="block" htmlFor="product-nutrients">Nutrients Available</label><textarea id="product-nutrients" maxLength={10000} rows={3} className="w-full border p-2" value={prodNutrients} onChange={e => setProdNutrients(e.target.value)} />
+                    <label className="block" htmlFor="product-nutrition-basis">Nutrition basis and units</label><input id="product-nutrition-basis" maxLength={200} className="w-full border p-2" value={prodNutritionBasis} onChange={e => setProdNutritionBasis(e.target.value)} aria-describedby="nutrition-basis-help" /><p id="nutrition-basis-help">State the basis and units exactly as supplied on the approved label.</p>
+                    <label className="block" htmlFor="product-how-to-use">How to Use</label><textarea id="product-how-to-use" maxLength={10000} rows={3} className="w-full border p-2" value={prodHowToUse} onChange={e => setProdHowToUse(e.target.value)} />
+                  </fieldset>
                   {/* Section B: Multiple Images */}
                   <div className="space-y-4">
                     <div className="flex justify-between items-center border-b border-gray-100 pb-1">
@@ -902,18 +904,18 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                     </div>
 
                     {prodImages.length === 0 ? (
-                      <p className="text-[11px] text-gray-400 italic">No additional gallery images added yet. The primary featured image will be used.</p>
+                      <p className="text-[11px] text-gray-400 italic">No gallery images. The featured image will be used.</p>
                     ) : (
                       <div className="space-y-2.5">
                         {prodImages.map((img, idx) => (
-                          <div key={idx} className="flex items-center gap-3 bg-gray-50 p-2.5 rounded-xl border border-gray-200/60">
+                          <div key={idx} className="flex flex-wrap sm:flex-nowrap items-center gap-3 bg-gray-50 p-2.5 rounded-xl border border-gray-200/60">
                             <span className="text-[10px] font-bold text-gray-400 w-5">#{idx + 1}</span>
                             <input
                               type="text"
                               value={img.imageUrl}
                               onChange={(e) => handleUpdateImageField(idx, 'imageUrl', e.target.value)}
                               placeholder="Image URL..."
-                              className="flex-1 bg-white rounded-lg border border-gray-200 px-3 py-1.5 text-xs"
+                              className="min-w-0 flex-1 bg-white rounded-lg border border-gray-200 px-3 py-1.5 text-xs"
                             />
                             <input
                               type="text"
@@ -940,9 +942,9 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                     <div className="flex justify-between items-center border-b border-gray-100 pb-1">
                       <div>
                         <h5 className="font-bold text-xs uppercase tracking-wider text-emerald-900">
-                          3. Product Variants (Sizes, Pricing & Stock)
+                          3. Product Variants (Sizes & Pricing)
                         </h5>
-                        <p className="text-[10px] text-gray-500">Each product can have multiple pack sizes with distinct pricing and stock</p>
+                        <p className="text-[10px] text-gray-500">Order requests are reviewed and confirmed manually.</p>
                       </div>
                       <button
                         type="button"
@@ -956,7 +958,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
 
                     <div className="space-y-3">
                       {prodVariants.map((v, idx) => (
-                        <div key={idx} className="p-3.5 bg-emerald-50/40 rounded-2xl border border-emerald-100 grid grid-cols-1 sm:grid-cols-6 gap-3 items-center">
+                        <div key={idx} className="p-3.5 bg-emerald-50/40 rounded-2xl border border-emerald-100 grid grid-cols-1 sm:grid-cols-5 gap-3 items-center">
                           <div>
                             <label className="block text-[10px] font-bold text-gray-600 mb-1">Pack Size</label>
                             <input
@@ -979,7 +981,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                               required
                               min="0"
                               value={v.price}
-                              onChange={(e) => handleUpdateVariantField(idx, 'price', Number(e.target.value))}
+                              onChange={(e) => handleUpdateVariantField(idx, 'price', e.target.value === '' ? '' : Number(e.target.value))}
                               className="w-full bg-white rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-bold text-emerald-900"
                             />
                           </div>
@@ -993,17 +995,6 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                               onChange={(e) => handleUpdateVariantField(idx, 'compareAtPrice', e.target.value === '' ? '' : Number(e.target.value))}
                               placeholder="e.g. 12000"
                               className="w-full bg-white rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-400"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-gray-600 mb-1">Stock Qty</label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={v.stock}
-                              onChange={(e) => handleUpdateVariantField(idx, 'stock', Number(e.target.value))}
-                              className="w-full bg-white rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs"
                             />
                           </div>
 
@@ -1026,7 +1017,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                                 onChange={(e) => handleUpdateVariantField(idx, 'available', e.target.checked)}
                                 className="rounded text-emerald-600"
                               />
-                              <span className="font-semibold text-gray-700">Active</span>
+                              <span className="font-semibold text-gray-700">{v.available ? 'Active' : 'Inactive / archived'}</span>
                             </label>
                             
                             <button
@@ -1034,7 +1025,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                               disabled={prodVariants.length <= 1}
                               onClick={() => handleRemoveVariantRow(idx)}
                               className="p-1.5 text-red-500 hover:text-red-700 disabled:opacity-30"
-                              title="Archive variant when saved"
+                              title="Saved variants are kept inactive to preserve order references"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1047,7 +1038,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                   {/* Actions Bar */}
                   <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
                     <button 
-                      type="button" onClick={() => { setIsAddingProduct(false); setEditingProduct(null); }}
+                      type="button" onClick={closeProductForm}
                       className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold"
                     >
                       Cancel
@@ -1080,7 +1071,6 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                       <th className="p-4 text-left">Product Title & Category</th>
                       <th className="p-4 text-left">Price Range</th>
                       <th className="p-4 text-left">Active Variants & Sizes</th>
-                      <th className="p-4 text-left">Stock Summary</th>
                       <th className="p-4 text-left">Status</th>
                       <th className="p-4 text-center">Actions</th>
                     </tr>
@@ -1091,7 +1081,6 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                       const prices = variants.length > 0 ? variants.map(v => v.price) : [p.price || 0];
                       const minPrice = Math.min(...prices);
                       const maxPrice = Math.max(...prices);
-                      const totalStock = variants.length > 0 ? variants.reduce((sum, v) => sum + (v.stock || 0), 0) : 50;
 
                       return (
                         <tr key={p.id} className="hover:bg-gray-50/50">
@@ -1104,7 +1093,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                             />
                           </td>
                           <td className="p-4">
-                            <p className="font-bold text-gray-900 text-sm">{p.name}</p>
+                            <p className="font-bold text-gray-900 text-sm">{p.name}</p><span className="block text-xs">{p.publicationStatus || 'PUBLISHED'}</span>{(!p.publicationStatus || p.publicationStatus === 'PUBLISHED') && <a href={`/products/${p.slug || p.id}`} target="_blank" rel="noopener noreferrer" className="underline">View public product</a>} <button type="button" className="underline" onClick={async () => { try { const r=await fetch('/api/admin/products/'+p.id+'/preview',{headers:{Authorization:'Bearer '+token},cache:'no-store'});const data=await r.json();if(!r.ok)throw new Error(data.error);setProductPreview(data); } catch(e){setProductFeedback((e as Error).message)} }}>Preview saved product</button>
                             <span className="text-[10px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md font-semibold mt-1 inline-block">
                               {p.category}
                             </span>
@@ -1128,9 +1117,6 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                                 ))
                               )}
                             </div>
-                          </td>
-                          <td className="p-4 font-semibold text-gray-700">
-                            {totalStock} units
                           </td>
                           <td className="p-4">
                             {p.available !== false ? (
@@ -1179,7 +1165,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
           <div className="space-y-8" id="orders-dashboard-view">
             {orderError && <p role="alert" className="text-red-700">{orderError}</p>}
             <h3 className="font-bold text-lg text-emerald-950 font-sans tracking-tight">
-              Order Dispatch Management
+              Orders
             </h3>
 
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
@@ -1244,13 +1230,13 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         {activeTab === 'gallery' && (
           <div className="space-y-8" id="gallery-dashboard-view">
             <h3 className="font-bold text-lg text-emerald-950 font-sans tracking-tight">
-              Gallery Control Center
+              Gallery
             </h3>
 
             {/* Gallery Upload Form */}
             <div className="bg-emerald-50/40 p-6 rounded-3xl border border-emerald-100/40 space-y-4">
               <h4 className="font-bold text-xs text-emerald-900 uppercase tracking-wider">
-                Upload New Image Asset to Gallery
+                Add gallery image
               </h4>
               <form onSubmit={handleAddGalleryItem} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                 <div className="md:col-span-6">
@@ -1258,7 +1244,7 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
                     token={token}
                     currentImageUrl={galImage}
                     category="gallery"
-                    label="Select or Drag Image File"
+                    label="Gallery image"
                     onUploadSuccess={({ imageUrl, publicId }) => {
                       setGalImage(imageUrl);
                       setGalPublicId(publicId);
@@ -1334,13 +1320,13 @@ export default function AdminDashboard({ token, onLoginSuccess, userRole }: Admi
         {activeTab === 'messages' && (
           <div className="space-y-8" id="messages-dashboard-view">
             <h3 className="font-bold text-lg text-emerald-950 font-sans tracking-tight">
-              Customer Contact Messages
+              Messages
             </h3>
 
             <div className="space-y-4">
               {messages.length === 0 ? (
                 <div className="py-16 text-center bg-white rounded-3xl border border-gray-100">
-                  <p className="text-gray-400 text-xs">No client inquiries found in database.</p>
+                  <p className="text-gray-400 text-xs">No messages yet.</p>
                 </div>
               ) : (
                 messages.map((m) => (

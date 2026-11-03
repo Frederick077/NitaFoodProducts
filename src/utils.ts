@@ -1,16 +1,15 @@
 import { siteSettings } from './config/siteSettings';
+import { NITA_WHATSAPP_URL } from './config/businessContact';
 
 // Tanzanian Shilling Formatter
 export function formatTZS(amount: number): string {
   return (
     new Intl.NumberFormat('en-TZ', {
-      style: 'currency',
-      currency: 'TZS',
+      style: 'decimal',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     })
       .format(amount)
-      .replace('TZS', '')
       .trim() + ' TZS'
   );
 }
@@ -43,9 +42,7 @@ export function getWhatsAppLink(productName?: string, quantity?: number, size?: 
     return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(msg)}`;
   }
 
-  // General default message
-  const defaultMsg = `Hello NITA FOOD PRODUCTS, I would like to know more about your products.`;
-  return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(defaultMsg)}`;
+  return NITA_WHATSAPP_URL;
 }
 
 // Helper for slugifying category names for clean URLs

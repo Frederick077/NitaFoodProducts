@@ -24,8 +24,8 @@ export default function CategoryManagement({ token, categories, onChange, loadEr
     finally { setBusy(false); }
   };
   return <section className="rounded-2xl bg-white border border-emerald-100 p-6 space-y-5">
-    <h2 className="text-xl font-bold text-emerald-900">Product Categories</h2>
-    <p className="text-sm text-gray-600">Manage the categories used by product forms and the shop. Reassign products before deleting a category.</p>
+    <h2 className="text-xl font-bold text-emerald-900">Categories</h2>
+    <p className="text-sm text-gray-600">Reassign products before deleting a category.</p>
     <form className="flex flex-wrap gap-3" onSubmit={event => { event.preventDefault(); void save(editingId ? 'PUT' : 'POST', editingId || undefined); }}>
       <label className="flex-1">Category name<input required maxLength={120} value={name} disabled={busy} onChange={event => setName(event.target.value)} className="block w-full border rounded-lg p-2" /></label>
       <button disabled={busy || !name.trim()} className="self-end bg-emerald-700 text-white rounded-lg px-4 py-2 disabled:opacity-50">{editingId ? 'Save category' : 'Create category'}</button>

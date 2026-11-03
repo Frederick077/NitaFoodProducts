@@ -1,32 +1,36 @@
+import { configuredRateStore } from './src/server/redisRateStore';
+import { securityHeaders, apiBodyParser, apiErrorHandler, logApiError } from './src/server/httpSecurity';
+import { InputError, contactInput, analyticsInput, orderCustomerInput, objectBody, siteImageSection, imageRecordValidation, reorderValidation } from './src/server/validation';
+import { createApiRateLimits } from './src/server/rateLimits';
+import { IMAGE_UPLOAD_MAX_BYTES } from './src/uploadPolicy';
+import { imageExtension, uploadCategory } from './src/server/uploadValidation';
+import { createAuthentication } from './src/server/auth';
+import { productWriteRoutes } from './src/server/productWrites';
+import { productReadRoutes } from './src/server/productReads';
+import { retainMediaForReview } from './src/server/productImages';
+import { productMediaRoutes } from './src/server/productMedia';
 import { categoryRoutes } from './src/server/categories';
-import { buildVariantUpdate } from './src/server/productVariants';
 ﻿import express from 'express';
-import path from 'path';
-import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { createServer as createViteServer } from 'vite';
 import { prisma, requireDatabase } from './src/lib/prisma';
-import { createCheckout, CheckoutError } from './src/server/checkout';
+import { createCheckout, CheckoutError, CheckoutPriceChanged, requireCheckoutQuote } from './src/server/checkout';
 import { Prisma } from '@prisma/client';
-import { uploadImageFile, deleteImageFile, isCloudinaryConfigured, validateCloudinaryConfig } from './src/server/imageStorage';
+import { uploadImageFile, isCloudinaryConfigured } from './src/server/imageStorage';
 
-const app = express();
-const PORT = 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'nita-food-jwt-secret-key-2026';
+export const app = express();
+const { login, requireAuth } = createAuthentication(process.env.JWT_SECRET, requireDatabase);
 
 // Middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(securityHeaders(process.env.NODE_ENV === 'production'));
+app.use(apiBodyParser);
+const rateLimits = createApiRateLimits({ production: process.env.NODE_ENV === 'production', secret: process.env.JWT_SECRET!, onVercel: process.env.VERCEL === '1', store: configuredRateStore(process.env) });
 
-// Serve local uploaded images statically
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-
-// Multer upload config: 10MB limit, image mimetypes only
+// Bounded multipart admission; file contents are checked before storage.
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
+    fileSize: IMAGE_UPLOAD_MAX_BYTES,
+    files: 1, fields: 1, parts: 2, fieldSize: 64, fieldNameSize: 32, headerPairs: 32
   },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/avif'];
@@ -37,164 +41,6 @@ const upload = multer({
     }
   },
 });
-
-// Helper to ensure an Admin account exists on startup
-async function ensureAdminExists() {
-  try {
-    const adminCount = await prisma.admin.count();
-    if (adminCount === 0) {
-      const adminEmail = process.env.ADMIN_INITIAL_EMAIL || 'admin@nitafoods.local';
-      const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || 'admin123';
-      const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(adminPassword, salt);
-
-      await prisma.admin.create({
-        data: {
-          name: 'NITA Administrator',
-          email: adminEmail,
-          passwordHash,
-        },
-      });
-      console.log(`[Database] Initial Admin account provisioned: ${adminEmail}`);
-    }
-  } catch (err) {
-    console.warn('[Database] Note: Could not auto-check admin on boot (run prisma migrate if DB is new):', err);
-  }
-}
-
-// Clean any legacy placeholder stock images from database
-async function ensureDefaultSiteImages() {
-  try {
-    const legacyImages = await prisma.siteImage.findMany({
-      where: {
-        imageUrl: { contains: 'unsplash.com' }
-      }
-    });
-    if (legacyImages.length > 0) {
-      for (const img of legacyImages) {
-        await prisma.siteImage.delete({ where: { id: img.id } });
-      }
-      console.log(`[Database] Removed ${legacyImages.length} legacy stock placeholder images.`);
-    }
-  } catch (err) {
-    // Non-blocking database check
-  }
-}
-
-// Token generation and verification
-function generateToken(payload: { id: string; name: string; email: string; role: 'Admin' }) {
-  const payloadStr = JSON.stringify({ ...payload, exp: Date.now() + 24 * 60 * 60 * 1000 });
-  const base64Payload = Buffer.from(payloadStr).toString('base64');
-  const signature = crypto.createHmac('sha256', JWT_SECRET).update(base64Payload).digest('hex');
-  return `${base64Payload}.${signature}`;
-}
-
-function verifyToken(token: string) {
-  try {
-    const [base64Payload, signature] = token.split('.');
-    if (!base64Payload || !signature) return null;
-    const expectedSignature = crypto.createHmac('sha256', JWT_SECRET).update(base64Payload).digest('hex');
-    if (signature !== expectedSignature) return null;
-
-    const payload = JSON.parse(Buffer.from(base64Payload, 'base64').toString('utf-8'));
-    if (Date.now() > payload.exp) {
-      return null;
-    }
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-// Auth Middleware
-function requireAuth(req: any, res: any, next: any) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, error: 'Access denied. No authentication token provided.' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  if (!token || token === 'null' || token === 'undefined') {
-    return res.status(401).json({ success: false, error: 'Access denied. Authentication token is missing or invalid.' });
-  }
-
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    return res.status(401).json({ success: false, error: 'Your session has expired. Please log in again.' });
-  }
-
-  req.user = decoded;
-  next();
-}
-
-// Helper to format product for rich API response
-function formatProduct(p: any) {
-  const images = (p.images || []).map((img: any) => ({
-    id: img.id,
-    productId: img.productId,
-    imageUrl: img.imageUrl || '',
-    storagePublicId: img.storagePublicId || '',
-    altText: img.altText || p.name || 'Product Image',
-    position: img.position ?? 0,
-    createdAt: img.createdAt ? (typeof img.createdAt === 'string' ? img.createdAt : img.createdAt.toISOString()) : new Date().toISOString(),
-  }));
-
-  const variants = (p.variants || []).map((v: any) => ({
-    id: v.id,
-    productId: v.productId,
-    name: v.name || '',
-    size: v.size || '',
-    price: Number(v.price) || 0,
-    compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
-    available: v.available !== undefined ? Boolean(v.available) : true,
-    stock: v.stock !== undefined ? Number(v.stock) : 50,
-    sku: v.sku || '',
-    createdAt: v.createdAt ? (typeof v.createdAt === 'string' ? v.createdAt : v.createdAt.toISOString()) : new Date().toISOString(),
-    updatedAt: v.updatedAt ? (typeof v.updatedAt === 'string' ? v.updatedAt : v.updatedAt.toISOString()) : new Date().toISOString(),
-  }));
-
-  // Derive base price (minimum price among available variants or first variant)
-  let basePrice = 0;
-  let compareAtPrice: number | null = null;
-  if (variants.length > 0) {
-    const sorted = [...variants].sort((a, b) => a.price - b.price);
-    basePrice = sorted[0].price;
-    compareAtPrice = sorted[0].compareAtPrice || null;
-  } else if (p.price) {
-    basePrice = Number(p.price);
-  }
-
-  // Derive primary image
-  const primaryImage = p.featuredImageUrl || (images.length > 0 ? images[0].imageUrl : '') || p.imageUrl || '';
-
-  // Derive sizes array
-  const sizes = variants.length > 0 ? variants.map((v: any) => v.size) : (p.sizes ? p.sizes.map((s: any) => (typeof s === 'string' ? s : s.size)) : ['250g', '500g', '1kg']);
-
-  return {
-    id: p.id,
-    name: p.name,
-    slug: p.slug || p.id,
-    shortDescription: p.shortDescription || '',
-    description: p.description || '',
-    category: typeof p.category === 'string' ? p.category : p.category?.name || '',
-    categoryId: p.categoryId,
-    featuredImageUrl: primaryImage,
-    featuredImagePublicId: p.featuredImagePublicId || '',
-    available: p.available !== undefined ? Boolean(p.available) : true,
-    isFeatured: Boolean(p.isFeatured),
-    ingredients: p.ingredients || '',
-    benefits: p.benefits || '',
-    images,
-    variants,
-    // Convenience backward-compatibility properties:
-    price: basePrice,
-    compareAtPrice,
-    image: primaryImage,
-    sizes,
-    createdAt: p.createdAt ? (typeof p.createdAt === 'string' ? p.createdAt : p.createdAt.toISOString()) : new Date().toISOString(),
-    updatedAt: p.updatedAt ? (typeof p.updatedAt === 'string' ? p.updatedAt : p.updatedAt.toISOString()) : new Date().toISOString(),
-  };
-}
 
 // Helper to format gallery item
 function formatGalleryItem(g: any) {
@@ -219,53 +65,12 @@ function formatGalleryItem(g: any) {
 // ==========================================
 
 // --- AUTH ---
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required.' });
-    }
-
-    const admin = await prisma.admin.findUnique({
-      where: { email: email.toLowerCase().trim() },
-    });
-
-    if (!admin) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    const isValid = await bcrypt.compare(password, admin.passwordHash);
-    if (!isValid) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    const token = generateToken({
-      id: admin.id,
-      name: admin.name,
-      email: admin.email,
-      role: 'Admin',
-    });
-
-    res.json({
-      token,
-      user: {
-        id: admin.id,
-        name: admin.name,
-        email: admin.email,
-        role: 'Admin',
-      },
-    });
-  } catch (err: any) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Internal server error during authentication.' });
-  }
-});
+app.post('/api/auth/login', rateLimits.login, login);
 
 // --- ANALYTICS TRACKING ---
-app.post('/api/analytics/visit', async (req, res) => {
+app.post('/api/analytics/visit', rateLimits.analytics, async (req, res) => {
   try {
-    const { path } = req.body;
-    if (!path) return res.status(400).json({ error: 'Path is required' });
+    const path = analyticsInput(req.body);
 
     await prisma.analyticsEvent.create({
       data: {
@@ -276,8 +81,8 @@ app.post('/api/analytics/visit', async (req, res) => {
 
     res.json({ success: true });
   } catch (err: any) {
-    console.error('Analytics track error:', err);
-    res.status(500).json({ error: 'Could not record analytics event.' });
+    logApiError('analytics.track.error.', err, res.locals.requestId);
+    res.status(err instanceof InputError ? 400 : 503).json({ error: err instanceof InputError ? err.message : 'Could not record analytics event.' });
   }
 });
 
@@ -295,8 +100,8 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
       }),
     ]);
 
-    const pageViews: Record<string, number> = {};
-    const popularProducts: Record<string, number> = {};
+    const pageViews: Record<string, number> = Object.create(null);
+    const popularProducts: Record<string, number> = Object.create(null);
 
     events.forEach((ev: any) => {
       if (ev.eventType === 'pageview') {
@@ -319,7 +124,7 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
       orders,
     });
   } catch (err: any) {
-    console.error('Get analytics error:', err);
+    logApiError('get.analytics.error.', err, res.locals.requestId);
     res.status(500).json({ error: 'Failed to fetch analytics summary.' });
   }
 });
@@ -327,402 +132,35 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
 app.use('/api/categories', categoryRoutes(requireAuth));
 
 // --- PRODUCTS ---
-app.get('/api/products', async (req, res) => {
-  try {
-    const { category, featured, search } = req.query;
+app.get('/api/products/:identifier', rateLimits.productViews);
+app.use('/api', productReadRoutes(requireAuth, () => prisma));
 
-    const where: any = {};
-    if (featured === 'true') {
-      where.isFeatured = true;
-    }
-    if (category && category !== 'All') {
-      where.category = { name: String(category) };
-    }
+app.use('/api', productWriteRoutes(requireAuth, requireDatabase));
 
-    const products = await prisma.product.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-
-    let formatted = products.map(formatProduct);
-
-    if (search) {
-      const q = String(search).toLowerCase();
-      formatted = formatted.filter(
-        (p: any) =>
-          p.name.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q) ||
-          (p.shortDescription && p.shortDescription.toLowerCase().includes(q)) ||
-          (p.ingredients && p.ingredients.toLowerCase().includes(q))
-      );
-    }
-
-    res.json(formatted);
-  } catch (err: any) {
-    console.error('Get products error:', err);
-    res.status(500).json({ error: 'Failed to retrieve products.' });
-  }
-});
-
-// Alias
-app.get('/api/admin/products', requireAuth, async (req, res) => {
-  try {
-    const products = await prisma.product.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json(products.map(formatProduct));
-  } catch (err: any) {
-    console.error('Admin get products error:', err);
-    res.status(500).json({ error: 'Failed to retrieve products.' });
-  }
-});
-
-app.get('/api/products/:identifier', async (req, res) => {
-  try {
-    const { identifier } = req.params;
-    let product = await prisma.product.findUnique({
-      where: { id: identifier },
-    });
-
-    if (!product) {
-      product = await prisma.product.findUnique({
-        where: { slug: identifier },
-      });
-    }
-
-    if (!product) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-
-    // Record product view event
-    prisma.analyticsEvent
-      .create({
-        data: {
-          eventType: 'product_view',
-          page: `/products/${product.slug || product.id}`,
-          productId: product.id,
-        },
-      })
-      .catch(() => {});
-
-    res.json(formatProduct(product));
-  } catch (err: any) {
-    console.error('Get product by identifier error:', err);
-    res.status(500).json({ error: 'Failed to retrieve product details.' });
-  }
-});
-
-// Create product
-app.post('/api/products', requireAuth, async (req, res) => {
-  try {
-    const {
-      name,
-      slug,
-      shortDescription,
-      description,
-      categoryId,
-      featuredImageUrl,
-      image,
-      available,
-      isFeatured,
-      ingredients,
-      benefits,
-      images,
-      variants,
-      sizes,
-      price,
-    } = req.body;
-
-    if (typeof name !== 'string' || !name.trim() || !description || typeof categoryId !== 'string' || !categoryId) {
-      return res.status(400).json({ error: 'Name, description, and category are required.' });
-    }
-
-    if (!await requireDatabase().category.findUnique({ where: { id: categoryId } })) return res.status(400).json({ error: 'Choose an existing category.' });
-
-    const generatedSlug = (slug || name)
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-
-    // Ensure unique slug
-    const finalSlug = generatedSlug || `product-${Date.now()}`;
-
-    // Normalize images
-    let imagesCreate: any[] = [];
-    if (Array.isArray(images) && images.length > 0) {
-      imagesCreate = images.map((img: any, idx: number) => ({
-        imageUrl: typeof img === 'string' ? img : img.imageUrl || '',
-        storagePublicId: typeof img === 'object' && img.storagePublicId ? img.storagePublicId : '',
-        altText: typeof img === 'object' && img.altText ? img.altText : `${name} image ${idx + 1}`,
-        position: typeof img === 'object' && img.position !== undefined ? img.position : idx,
-      }));
-    } else if (featuredImageUrl || image) {
-      imagesCreate = [{
-        imageUrl: featuredImageUrl || image,
-        storagePublicId: req.body.featuredImagePublicId || '',
-        altText: `${name} primary image`,
-        position: 0
-      }];
-    }
-
-    // Normalize variants
-    let variantsCreate: any[] = [];
-    if (Array.isArray(variants) && variants.length > 0) {
-      variantsCreate = variants.map((v: any, idx: number) => ({
-        name: typeof v.name === 'string' ? v.name.trim() : '',
-        size: typeof v.size === 'string' ? v.size.trim() : '',
-        price: Number(v.price) || Number(price) || 0,
-        compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
-        available: v.available !== undefined ? Boolean(v.available) : true,
-        stock: v.stock !== undefined ? Number(v.stock) : 50,
-        sku: v.sku || `SKU-${Date.now()}-${idx}`,
-      }));
-    } else if (Array.isArray(sizes) && sizes.length > 0) {
-      variantsCreate = sizes.map((s: string, idx: number) => ({
-        name: s,
-        size: s,
-        price: Number(price) || 10000,
-        compareAtPrice: null,
-        available: true,
-        stock: 50,
-        sku: `SKU-${Date.now()}-${idx}`,
-      }));
-    } else {
-      variantsCreate = [
-        {
-          name: 'Standard',
-          size: '250g',
-          price: Number(price) || 10000,
-          compareAtPrice: null,
-          available: true,
-          stock: 50,
-          sku: `SKU-${Date.now()}-0`,
-        },
-      ];
-    }
-
-    buildVariantUpdate(variantsCreate, []);
-
-    const product = await prisma.product.create({
-      data: {
-        name,
-        slug: finalSlug,
-        shortDescription: shortDescription || '',
-        description,
-        categoryId,
-        featuredImageUrl: featuredImageUrl || image || (imagesCreate[0]?.imageUrl || ''),
-        featuredImagePublicId: req.body.featuredImagePublicId || '',
-        available: available !== undefined ? Boolean(available) : true,
-        isFeatured: Boolean(isFeatured),
-        ingredients: ingredients || '',
-        benefits: benefits || '',
-        images: {
-          create: imagesCreate,
-        },
-        variants: {
-          create: variantsCreate,
-        },
-      },
-    });
-
-    res.status(201).json(formatProduct(product));
-  } catch (err: any) {
-    console.error('Create product error:', err);
-    res.status(err instanceof CheckoutError ? 400 : 500).json({ error: err instanceof CheckoutError ? err.message : 'Failed to create product in database.' });
-  }
-});
-
-// Update product
-app.put('/api/products/:id', requireAuth, async (req, res) => {
-  try {
-    requireDatabase();
-    const {
-      name,
-      slug,
-      shortDescription,
-      description,
-      categoryId,
-      featuredImageUrl,
-      featuredImagePublicId,
-      image,
-      available,
-      isFeatured,
-      ingredients,
-      benefits,
-      images,
-      variants,
-      sizes,
-      price,
-    } = req.body;
-
-    const existing = await prisma.product.findUnique({
-      where: { id: req.params.id },
-      include: { images: true },
-    });
-
-    if (!existing) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-
-    if (categoryId !== undefined && (typeof categoryId !== 'string' || !await requireDatabase().category.findUnique({ where: { id: categoryId } }))) return res.status(400).json({ error: 'Choose an existing category.' });
-    if (name !== undefined && (typeof name !== 'string' || !name.trim())) return res.status(400).json({ error: 'Product name is required.' });
-    if (variants !== undefined) buildVariantUpdate(variants, existing.variants);
-
-    // Build update object
-    const newFeaturedImg = featuredImageUrl !== undefined ? featuredImageUrl : (image !== undefined ? image : existing.featuredImageUrl);
-    if (newFeaturedImg && newFeaturedImg !== existing.featuredImageUrl && existing.featuredImagePublicId) {
-      await deleteImageFile(existing.featuredImagePublicId, existing.featuredImageUrl);
-    }
-
-    const updateData: any = {
-      name: name !== undefined ? name : existing.name,
-      slug: slug !== undefined ? slug : existing.slug,
-      shortDescription: shortDescription !== undefined ? shortDescription : existing.shortDescription,
-      description: description !== undefined ? description : existing.description,
-      category: { connect: { id: categoryId !== undefined ? categoryId : existing.categoryId } },
-      featuredImageUrl: newFeaturedImg,
-      featuredImagePublicId: featuredImagePublicId !== undefined ? featuredImagePublicId : existing.featuredImagePublicId,
-      available: available !== undefined ? Boolean(available) : existing.available,
-      isFeatured: isFeatured !== undefined ? Boolean(isFeatured) : existing.isFeatured,
-      ingredients: ingredients !== undefined ? ingredients : existing.ingredients,
-      benefits: benefits !== undefined ? benefits : existing.benefits,
-    };
-
-    // Update images if provided
-    if (images !== undefined) {
-      updateData.images = {
-        deleteMany: {},
-        create: Array.isArray(images)
-          ? images.map((img: any, idx: number) => ({
-              imageUrl: typeof img === 'string' ? img : img.imageUrl || '',
-              storagePublicId: typeof img === 'object' && img.storagePublicId ? img.storagePublicId : '',
-              altText: typeof img === 'object' && img.altText ? img.altText : `${updateData.name} image ${idx + 1}`,
-              position: typeof img === 'object' && img.position !== undefined ? img.position : idx,
-            }))
-          : [],
-      };
-    }
-
-    // Nested writes preserve IDs; omitted variants are archived, never deleted.
-    if (variants !== undefined) {
-      updateData.variants = buildVariantUpdate(variants, existing.variants);
-    } else if (sizes !== undefined) {
-      return res.status(400).json({ error: 'Submit variants with their existing IDs when editing sizes.' });
-    }
-    if (typeof updateData.name !== 'string' || !updateData.name.trim()) return res.status(400).json({ error: 'Product name is required.' });
-
-    const updated = await prisma.product.update({
-      where: { id: req.params.id },
-      data: updateData,
-    });
-
-    res.json(formatProduct(updated));
-  } catch (err: any) {
-    console.error('Update product error:', err);
-    res.status(err instanceof CheckoutError ? 400 : 500).json({ error: err instanceof CheckoutError ? err.message : 'Failed to update product. Check database configuration and unique slug.' });
-  }
-});
-
-// Delete product
-app.delete('/api/products/:id', requireAuth, async (req, res) => {
-  try {
-    const existing = await prisma.product.findUnique({
-      where: { id: req.params.id },
-      include: { images: true },
-    });
-
-    if (existing) {
-      if (existing.featuredImagePublicId || existing.featuredImageUrl) {
-        await deleteImageFile(existing.featuredImagePublicId, existing.featuredImageUrl);
-      }
-      for (const img of existing.images) {
-        if (img.storagePublicId || img.imageUrl) {
-          await deleteImageFile(img.storagePublicId, img.imageUrl);
-        }
-      }
-    }
-
-    const deleted = await prisma.product.delete({
-      where: { id: req.params.id },
-    });
-
-    res.json({ message: 'Product deleted successfully', product: formatProduct(deleted) });
-  } catch (err: any) {
-    console.error('Delete product error:', err);
-    res.status(500).json({ error: 'Failed to delete product.' });
-  }
-});
-
-// Delete a specific product secondary image
-app.delete('/api/admin/products/:productId/images/:imageId', requireAuth, async (req, res) => {
-  try {
-    const { productId, imageId } = req.params;
-    const img = await prisma.productImage.findUnique({ where: { id: imageId } });
-    if (!img) {
-      return res.status(404).json({ error: 'Product image not found.' });
-    }
-    if (img.storagePublicId || img.imageUrl) {
-      await deleteImageFile(img.storagePublicId, img.imageUrl);
-    }
-    await prisma.productImage.delete({ where: { id: imageId } });
-
-    const updatedProd = await prisma.product.findUnique({
-      where: { id: productId },
-      include: { images: { orderBy: { position: 'asc' } }, variants: true },
-    });
-    res.json({ success: true, message: 'Image deleted', product: formatProduct(updatedProd) });
-  } catch (err: any) {
-    console.error('Delete product image error:', err);
-    res.status(500).json({ error: 'Failed to delete product image.' });
-  }
-});
-
-// Reorder product secondary images
-app.put('/api/admin/products/:productId/images/reorder', requireAuth, async (req, res) => {
-  try {
-    const { productId } = req.params;
-    const { items } = req.body;
-    if (Array.isArray(items)) {
-      await Promise.all(
-        items.map((item: any, idx: number) =>
-          prisma.productImage.update({
-            where: { id: item.id },
-            data: { position: item.position !== undefined ? Number(item.position) : idx },
-          })
-        )
-      );
-    }
-    const updatedProd = await prisma.product.findUnique({
-      where: { id: productId },
-      include: { images: { orderBy: { position: 'asc' } }, variants: true },
-    });
-    res.json({ success: true, message: 'Image order updated', product: formatProduct(updatedProd) });
-  } catch (err: any) {
-    console.error('Reorder product images error:', err);
-    res.status(500).json({ error: 'Failed to reorder product images.' });
-  }
-});
+app.use('/api', productMediaRoutes(requireAuth, requireDatabase));
 
 // --- ORDERS ---
 app.get('/api/orders', requireAuth, async (req, res) => {
   try { res.json(await requireDatabase().order.findMany({ include: { items: true }, orderBy: { createdAt: 'desc' } })); }
-  catch (err) { console.error(err); res.status(503).json({ error: 'Unable to load orders from PostgreSQL.' }); }
+  catch (err) { logApiError('orders.read', err, res.locals.requestId); res.status(503).json({ error: 'Orders are temporarily unavailable.' }); }
 });
 app.get('/api/admin/orders/:id', requireAuth, async (req, res) => {
   try {
     const order = await requireDatabase().order.findUnique({ where: { id: req.params.id }, include: { items: true } });
     if (!order) return res.status(404).json({ error: 'Order not found.' });
     res.json(order);
-  } catch (err) { console.error(err); res.status(503).json({ error: 'Unable to load order.' }); }
+  } catch (err) { logApiError('orders.read', err, res.locals.requestId); res.status(503).json({ error: 'Unable to load order.' }); }
 });
-app.post('/api/orders', async (req, res) => {
+app.post('/api/orders', rateLimits.orders, async (req, res) => {
   try {
+    objectBody(req.body);
+    orderCustomerInput(req.body);
+    requireCheckoutQuote(req.body.items);
     const order = await requireDatabase().$transaction(tx => createCheckout(tx, req.body), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     res.status(201).json(order);
   } catch (err) {
-    console.error('Checkout failed:', err);
-    res.status(err instanceof CheckoutError ? 400 : 503).json({ error: err instanceof CheckoutError ? err.message : 'Order could not be saved. Please try again.' });
+    logApiError('checkout.failed.', err, res.locals.requestId);
+    res.status(err instanceof CheckoutPriceChanged ? 409 : err instanceof CheckoutError || err instanceof InputError ? 400 : 503).json({ error: err instanceof CheckoutError || err instanceof InputError ? err.message : 'Order could not be saved. Please try again.', ...(err instanceof CheckoutPriceChanged ? { priceChanges: err.changes } : {}) });
   }
 });
 app.put('/api/orders/:id', requireAuth, async (req, res) => {
@@ -736,17 +174,16 @@ app.put('/api/orders/:id', requireAuth, async (req, res) => {
 // --- GALLERY ---
 app.get('/api/gallery', async (req, res) => {
   try {
-    const items = await prisma.galleryItem.findMany({
-      orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
-    });
-    res.json(items.map(formatGalleryItem));
-  } catch (err: any) {
-    console.error('Get gallery error:', err);
-    res.status(500).json({ error: 'Failed to retrieve gallery items.' });
-  }
+    const items = await prisma.galleryItem.findMany({ where: { enabled: true }, orderBy: [{ position: 'asc' }, { createdAt: 'desc' }] });
+    res.json(items.filter((item: any) => item.enabled !== false).map(formatGalleryItem));
+  } catch (error) { logApiError('gallery.public-read', error, res.locals.requestId); res.status(503).json({ error: 'Photographs are temporarily unavailable.' }); }
+});
+app.get('/api/admin/gallery', requireAuth, async (req, res) => {
+  try { res.json((await prisma.galleryItem.findMany({ orderBy: [{ position: 'asc' }, { createdAt: 'desc' }] })).map(formatGalleryItem)); }
+  catch (error) { logApiError('gallery.admin-read', error, res.locals.requestId); res.status(503).json({ error: 'Photographs are temporarily unavailable.' }); }
 });
 
-app.post(['/api/gallery', '/api/admin/gallery'], requireAuth, async (req, res) => {
+app.post(['/api/gallery', '/api/admin/gallery'], requireAuth, imageRecordValidation('gallery'), async (req, res) => {
   const { title, description, image, imageUrl, category, storagePublicId, altText, position, enabled } = req.body;
   try {
     if (!category) {
@@ -768,18 +205,18 @@ app.post(['/api/gallery', '/api/admin/gallery'], requireAuth, async (req, res) =
 
     res.status(201).json(formatGalleryItem(newItem));
   } catch (err: any) {
-    console.error('Create gallery item error:', err);
+    logApiError('create.gallery.item.error.', err, res.locals.requestId);
     if (storagePublicId || image || imageUrl) {
-      deleteImageFile(storagePublicId, image || imageUrl).catch(() => {});
+      retainMediaForReview(storagePublicId, image || imageUrl).catch(() => {});
     }
     res.status(500).json({
       success: false,
-      error: 'Image uploaded but database record could not be saved: ' + (err?.message || 'Database error'),
+      error: 'The image record could not be saved. Please try again.',
     });
   }
 });
 
-app.put(['/api/gallery/reorder', '/api/admin/gallery/reorder'], requireAuth, async (req, res) => {
+app.put(['/api/gallery/reorder', '/api/admin/gallery/reorder'], requireAuth, reorderValidation, async (req, res) => {
   try {
     const { items } = req.body;
     if (Array.isArray(items)) {
@@ -794,12 +231,12 @@ app.put(['/api/gallery/reorder', '/api/admin/gallery/reorder'], requireAuth, asy
     }
     res.json({ success: true, message: 'Gallery order updated' });
   } catch (err: any) {
-    console.error('Reorder gallery items error:', err);
+    logApiError('reorder.gallery.items.error.', err, res.locals.requestId);
     res.status(500).json({ error: 'Failed to reorder gallery items.' });
   }
 });
 
-app.put(['/api/gallery/:id', '/api/admin/gallery/:id'], requireAuth, async (req, res) => {
+app.put(['/api/gallery/:id', '/api/admin/gallery/:id'], requireAuth, imageRecordValidation('gallery', true), async (req, res) => {
   try {
     const { title, description, image, imageUrl, category, storagePublicId, altText, position, enabled } = req.body;
     const existing = await prisma.galleryItem.findUnique({ where: { id: req.params.id } });
@@ -809,7 +246,7 @@ app.put(['/api/gallery/:id', '/api/admin/gallery/:id'], requireAuth, async (req,
 
     const newImg = image !== undefined ? image : imageUrl;
     if (newImg && newImg !== existing.imageUrl && existing.storagePublicId) {
-      await deleteImageFile(existing.storagePublicId, existing.imageUrl);
+      await retainMediaForReview(existing.storagePublicId, existing.imageUrl);
     }
 
     const updated = await prisma.galleryItem.update({
@@ -828,7 +265,7 @@ app.put(['/api/gallery/:id', '/api/admin/gallery/:id'], requireAuth, async (req,
 
     res.json(formatGalleryItem(updated));
   } catch (err: any) {
-    console.error('Update gallery item error:', err);
+    logApiError('update.gallery.item.error.', err, res.locals.requestId);
     res.status(500).json({ error: 'Failed to update gallery item.' });
   }
 });
@@ -837,7 +274,7 @@ app.delete(['/api/gallery/:id', '/api/admin/gallery/:id'], requireAuth, async (r
   try {
     const existing = await prisma.galleryItem.findUnique({ where: { id: req.params.id } });
     if (existing && (existing.storagePublicId || existing.imageUrl)) {
-      await deleteImageFile(existing.storagePublicId, existing.imageUrl);
+      await retainMediaForReview(existing.storagePublicId, existing.imageUrl);
     }
 
     const deleted = await prisma.galleryItem.delete({
@@ -845,7 +282,7 @@ app.delete(['/api/gallery/:id', '/api/admin/gallery/:id'], requireAuth, async (r
     });
     res.json({ message: 'Gallery item deleted', item: formatGalleryItem(deleted) });
   } catch (err: any) {
-    console.error('Delete gallery item error:', err);
+    logApiError('delete.gallery.item.error.', err, res.locals.requestId);
     res.status(500).json({ error: 'Failed to delete gallery item.' });
   }
 });
@@ -876,11 +313,11 @@ app.post('/api/admin/images/upload', requireAuth, (req, res, next) => {
   upload.single('image')(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ success: false, error: 'File is too large. Maximum allowed size is 10 MB.' });
+        return res.status(413).json({ success: false, error: 'File is too large. Maximum allowed size is 4 MB.' });
       }
-      return res.status(400).json({ success: false, error: err.message });
+      return res.status(400).json({ success: false, error: 'Invalid image upload request.' });
     } else if (err) {
-      return res.status(400).json({ success: false, error: err.message });
+      return res.status(400).json({ success: false, error: 'Invalid image upload request.' });
     }
     next();
   });
@@ -890,7 +327,8 @@ app.post('/api/admin/images/upload', requireAuth, (req, res, next) => {
       return res.status(400).json({ success: false, error: 'No image file uploaded.' });
     }
 
-    const category = req.body.category || 'general';
+    const category = uploadCategory(req.body.category);
+    imageExtension(req.file.buffer, req.file.mimetype);
     const result = await uploadImageFile(
       req.file.buffer,
       req.file.originalname,
@@ -898,15 +336,17 @@ app.post('/api/admin/images/upload', requireAuth, (req, res, next) => {
       category
     );
 
+    await retainMediaForReview(result.publicId, result.imageUrl);
     res.json({
       success: true,
       imageUrl: result.imageUrl,
       publicId: result.publicId,
       provider: result.provider,
+      cleanupRequiredIfUnused: true,
     });
   } catch (err: any) {
-    console.error('Upload image error:', err);
-    res.status(500).json({ success: false, error: err.message || 'Image upload failed.' });
+    logApiError('upload.image.error.', err, res.locals.requestId);
+    res.status(err instanceof InputError ? 400 : 503).json({ success: false, error: err instanceof InputError ? err.message : 'Image upload is temporarily unavailable.' });
   }
 });
 
@@ -917,10 +357,10 @@ app.post('/api/admin/images/delete', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'publicId or imageUrl is required' });
     }
 
-    await deleteImageFile(publicId, imageUrl);
-    res.json({ success: true, message: 'Image removed from storage.' });
+    await retainMediaForReview(publicId, imageUrl);
+    res.json({ success: true, retained: true, cleanupRequired: true, message: 'Asset retained. Physical cleanup requires a separate reference review.' });
   } catch (err: any) {
-    console.error('Delete image storage error:', err);
+    logApiError('delete.image.storage.error.', err, res.locals.requestId);
     res.status(500).json({ success: false, error: 'Failed to delete image.' });
   }
 });
@@ -928,7 +368,7 @@ app.post('/api/admin/images/delete', requireAuth, async (req, res) => {
 // --- SITE IMAGES (Production, Factory, Quality & Certifications) ---
 app.get('/api/site-images', async (req, res) => {
   try {
-    const { section } = req.query;
+    const section = siteImageSection(req.query.section);
     const where: any = { enabled: true };
     if (section && typeof section === 'string') {
       where.section = section.toUpperCase();
@@ -939,14 +379,14 @@ app.get('/api/site-images', async (req, res) => {
     });
     res.json(items);
   } catch (err: any) {
-    console.error('Get site images error:', err);
-    res.status(500).json({ error: 'Failed to retrieve site images.', details: err?.message });
+    logApiError('get.site.images.error.', err, res.locals.requestId);
+    res.status(err instanceof InputError ? 400 : 503).json({ error: err instanceof InputError ? err.message : 'Photographs are temporarily unavailable.' });
   }
 });
 
 app.get('/api/admin/site-images', requireAuth, async (req, res) => {
   try {
-    const { section } = req.query;
+    const section = siteImageSection(req.query.section);
     const where: any = {};
     if (section && typeof section === 'string') {
       where.section = section.toUpperCase();
@@ -957,12 +397,12 @@ app.get('/api/admin/site-images', requireAuth, async (req, res) => {
     });
     res.json(items);
   } catch (err: any) {
-    console.error('Get admin site images error:', err);
-    res.status(500).json({ error: 'Failed to retrieve site images.' });
+    logApiError('get.admin.site.images.error.', err, res.locals.requestId);
+    res.status(err instanceof InputError ? 400 : 503).json({ error: err instanceof InputError ? err.message : 'Photographs are temporarily unavailable.' });
   }
 });
 
-app.post('/api/admin/site-images', requireAuth, async (req, res) => {
+app.post('/api/admin/site-images', requireAuth, imageRecordValidation('site'), async (req, res) => {
   const { section, imageUrl, storagePublicId, altText, title, position, enabled } = req.body;
   try {
     if (!section || !imageUrl) {
@@ -983,18 +423,38 @@ app.post('/api/admin/site-images', requireAuth, async (req, res) => {
 
     res.status(201).json(newItem);
   } catch (err: any) {
-    console.error('Create site image error:', err);
+    logApiError('create.site.image.error.', err, res.locals.requestId);
     if (storagePublicId || imageUrl) {
-      deleteImageFile(storagePublicId, imageUrl).catch(() => {});
+      retainMediaForReview(storagePublicId, imageUrl).catch(() => {});
     }
     res.status(500).json({
       success: false,
-      error: 'Image uploaded but database record could not be saved: ' + (err?.message || 'Database error'),
+      error: 'The image record could not be saved. Please try again.',
     });
   }
 });
 
-app.put('/api/admin/site-images/:id', requireAuth, async (req, res) => {
+app.put('/api/admin/site-images/reorder', requireAuth, reorderValidation, async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (Array.isArray(items)) {
+      await Promise.all(
+        items.map((item: any) =>
+          prisma.siteImage.update({
+            where: { id: item.id },
+            data: { position: Number(item.position) },
+          })
+        )
+      );
+    }
+    res.json({ success: true, message: 'Order updated' });
+  } catch (err: any) {
+    logApiError('reorder.site.images.error.', err, res.locals.requestId);
+    res.status(500).json({ error: 'Failed to reorder site images.' });
+  }
+});
+
+app.put('/api/admin/site-images/:id', requireAuth, imageRecordValidation('site', true), async (req, res) => {
   try {
     const { section, imageUrl, storagePublicId, altText, title, position, enabled } = req.body;
     const existing = await prisma.siteImage.findUnique({ where: { id: req.params.id } });
@@ -1004,7 +464,7 @@ app.put('/api/admin/site-images/:id', requireAuth, async (req, res) => {
 
     // Clean up old remote asset if image URL was replaced
     if (imageUrl && imageUrl !== existing.imageUrl && existing.storagePublicId) {
-      await deleteImageFile(existing.storagePublicId, existing.imageUrl);
+      await retainMediaForReview(existing.storagePublicId, existing.imageUrl);
     }
 
     const updated = await prisma.siteImage.update({
@@ -1022,7 +482,7 @@ app.put('/api/admin/site-images/:id', requireAuth, async (req, res) => {
 
     res.json(updated);
   } catch (err: any) {
-    console.error('Update site image error:', err);
+    logApiError('update.site.image.error.', err, res.locals.requestId);
     res.status(500).json({ error: 'Failed to update site image.' });
   }
 });
@@ -1035,34 +495,14 @@ app.delete('/api/admin/site-images/:id', requireAuth, async (req, res) => {
     }
 
     if (existing.storagePublicId || existing.imageUrl) {
-      await deleteImageFile(existing.storagePublicId, existing.imageUrl);
+      await retainMediaForReview(existing.storagePublicId, existing.imageUrl);
     }
 
     await prisma.siteImage.delete({ where: { id: req.params.id } });
     res.json({ success: true, message: 'Site image deleted successfully.' });
   } catch (err: any) {
-    console.error('Delete site image error:', err);
+    logApiError('delete.site.image.error.', err, res.locals.requestId);
     res.status(500).json({ error: 'Failed to delete site image.' });
-  }
-});
-
-app.put('/api/admin/site-images/reorder', requireAuth, async (req, res) => {
-  try {
-    const { items } = req.body;
-    if (Array.isArray(items)) {
-      await Promise.all(
-        items.map((item: any) =>
-          prisma.siteImage.update({
-            where: { id: item.id },
-            data: { position: Number(item.position) },
-          })
-        )
-      );
-    }
-    res.json({ success: true, message: 'Order updated' });
-  } catch (err: any) {
-    console.error('Reorder site images error:', err);
-    res.status(500).json({ error: 'Failed to reorder site images.' });
   }
 });
 
@@ -1074,33 +514,19 @@ app.get('/api/messages', requireAuth, async (req, res) => {
     });
     res.json(messages);
   } catch (err: any) {
-    console.error('Get messages error:', err);
+    logApiError('get.messages.error.', err, res.locals.requestId);
     res.status(500).json({ error: 'Failed to retrieve messages.' });
   }
 });
 
-app.post('/api/messages', async (req, res) => {
+app.post('/api/messages', rateLimits.contact, async (req, res) => {
   try {
-    const { name, email, phone, subject, message } = req.body;
-    if (!name || !email || !message) {
-      return res.status(400).json({ error: 'Name, email, and message are required.' });
-    }
-
-    const newMessage = await prisma.message.create({
-      data: {
-        name,
-        email,
-        phone: phone || '',
-        subject: subject || 'Website Contact Form',
-        message,
-        status: 'New',
-      },
-    });
-
-    res.status(201).json(newMessage);
-  } catch (err: any) {
-    console.error('Create message error:', err);
-    res.status(500).json({ error: 'Failed to send message.' });
+    const data = contactInput(req.body);
+    await requireDatabase().message.create({ data: { ...data, status: 'New' } });
+    res.status(201).json({ success: true });
+  } catch (error) {
+    logApiError('contact.create', error, res.locals.requestId);
+    res.status(error instanceof InputError ? 400 : 503).json({ error: error instanceof InputError ? error.message : 'Your message could not be sent. Please try again.' });
   }
 });
 
@@ -1108,66 +534,15 @@ app.post('/api/messages', async (req, res) => {
 // NEVER RETURN index.html FOR /api/*
 // ==========================================
 // 1. Explicit catch-all for any unhandled /api/* route: ALWAYS return JSON 404
-app.all('/api/*', (req, res) => {
+app.all(['/api', '/api/*'], (req, res) => {
   res.status(404).json({
     success: false,
-    error: `API endpoint not found: ${req.method} ${req.originalUrl || req.url}`,
+    error: 'API endpoint not found.',
   });
 });
 
 // 2. Centralized error handler for all /api requests: ALWAYS return JSON
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (req.path.startsWith('/api') || req.originalUrl?.startsWith('/api')) {
-    console.error('[Centralized API Error]:', err);
-    return res.status(err.status || err.statusCode || 500).json({
-      success: false,
-      error: err.message || 'Internal server error occurred.',
-    });
-  }
-  next(err);
-});
+app.use(apiErrorHandler);
 
-// --- INITIALIZE SERVER ---
-async function startServer() {
-  await ensureAdminExists();
-  await ensureDefaultSiteImages();
-  validateCloudinaryConfig();
-
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    // Explicit guard before Vite middleware: ensure /api requests never hit Vite HTML fallback
-    app.use((req, res, next) => {
-      if (req.path.startsWith('/api') || req.url.startsWith('/api')) {
-        return res.status(404).json({
-          success: false,
-          error: `API endpoint not found: ${req.method} ${req.url}`,
-        });
-      }
-      next();
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      // Never return index.html for API routes in production
-      if (req.path.startsWith('/api')) {
-        return res.status(404).json({
-          success: false,
-          error: `API endpoint not found: ${req.method} ${req.url}`,
-        });
-      }
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Server] NITA Foods running on http://localhost:${PORT}`);
-  });
-}
-
-startServer();
-
+// Imported by the Vercel handler or a local runner; importing never listens.
+export default app;

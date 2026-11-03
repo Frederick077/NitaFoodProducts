@@ -1,10 +1,9 @@
-import React from 'react';
-import HeroSlider from './HeroSlider';
-import { HeroSlide } from '../types';
-import { heroSlides } from '../data/heroSlides';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import HeroTypewriter from './HeroTypewriter';
+import pumpkinSeedPowder from '../assets/images/NITA Pumpkin Seed Powder.png';
 
 export interface HeroProps {
-  slides?: HeroSlide[];
   brandText?: string;
   headline?: string;
   ctaText?: string;
@@ -12,35 +11,48 @@ export interface HeroProps {
   heroImage?: string;
 }
 
-/**
- * Homepage Hero Component
- * Renders the full-width, 3-slide dynamic HeroSlider carousel.
- */
+/** Static homepage photograph with the existing slogan and typewriter behavior. */
 export default function Hero({
-  slides,
-  brandText,
-  headline,
-  ctaText,
-  ctaLink,
-  heroImage,
+  brandText = 'NITA FOOD PRODUCTS',
+  headline = 'Eat healthy, Feel healthy, Look healthy',
+  ctaText = 'Shop Now',
+  ctaLink = '/products',
+  heroImage = pumpkinSeedPowder,
 }: HeroProps) {
-  // If specific props are provided, apply them to slide 1 for customization
-  let resolvedSlides = slides || heroSlides;
-  if (brandText || headline || ctaText || ctaLink || heroImage) {
-    resolvedSlides = resolvedSlides.map((s, idx) => {
-      if (idx === 0) {
-        return {
-          ...s,
-          eyebrow: brandText || s.eyebrow,
-          headline: headline || s.headline,
-          ctaText: ctaText || s.ctaText,
-          ctaLink: ctaLink || s.ctaLink,
-          imageUrl: heroImage !== undefined ? heroImage : s.imageUrl,
-        };
-      }
-      return s;
-    });
-  }
+  const [failedSource, setFailedSource] = useState<string>();
+  const [hidden, setHidden] = useState(() => document.hidden);
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  return <HeroSlider slides={resolvedSlides} />;
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onMotion = () => setReducedMotion(media.matches);
+    const onVisibility = () => setHidden(document.hidden);
+    media.addEventListener('change', onMotion);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { media.removeEventListener('change', onMotion); document.removeEventListener('visibilitychange', onVisibility); };
+  }, []);
+
+  const lines = headline.split(/\n|(?<=,)\s*/).filter(Boolean);
+  const approvedSlogan = lines.length === 3 && lines.every((line, i) => line.trim() === ['Eat healthy,', 'Feel healthy,', 'Look healthy'][i]);
+
+  return <section className="nita-hero" id="homepage-hero" aria-label="NITA Food Products">
+    <div className="nita-hero-copy">
+      <p className="nita-hero-eyebrow">{brandText}</p>
+      <h1 className="nita-type-hero" key={headline} aria-label={headline.replace(/\s+/g, ' ').trim()}>
+        {lines.map((line, i) => <span className="block" key={i} aria-hidden="true">
+          {approvedSlogan && i === 2 ? <HeroTypewriter text="Look healthy" reducedMotion={reducedMotion} active={!hidden} /> : line}
+        </span>)}
+      </h1>
+      <p className="nita-hero-description">Seeds, flours and granola for everyday meals. Discover nutritious foods from NITA Food Products, made in Arusha, Tanzania.</p>
+      <div className="nita-hero-actions">
+        <Link className="nita-hero-cta" to={ctaLink} id="hero-slide-1-cta">{ctaText}</Link>
+        <Link className="nita-hero-story" to="/about/our-story">Our Story <span aria-hidden="true">&rarr;</span></Link>
+      </div>
+    </div>
+    <div className="nita-hero-media"><div className="nita-hero-photos">
+      {heroImage && failedSource !== heroImage
+        ? <img className="nita-hero-static-photo" src={heroImage} alt="Two NITA pumpkin seed powder jars in different sizes" loading="eager" fetchPriority="high" onError={() => setFailedSource(heroImage)} />
+        : <div className="nita-hero-fallback" role="img" aria-label="NITA product photography unavailable" />}
+    </div></div>
+  </section>;
 }

@@ -1,268 +1,110 @@
 import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Target, Eye, ShieldCheck, Award, Users, Lightbulb, CheckSquare, Factory, Sprout } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { companySectionForHash } from '../data/companySections';
 import { trackPageView } from '../utils';
-import SafeImage from '../components/SafeImage';
+import productTable from '../assets/hero/hero-1.webp';
+import productDisplay from '../assets/images/NITA Pumpkin Seed Powder.png';
+
+function CompanyPhoto({ src, alt, portrait = false, eager = false }: { src?: string; alt: string; portrait?: boolean; eager?: boolean }) {
+  const [failedSource, setFailedSource] = useState<string>();
+  return <figure className={`company-photo${portrait ? ' company-photo--portrait' : ''}`}>
+    {src && failedSource !== src
+      ? <img src={src} alt={alt} loading={eager ? 'eager' : 'lazy'} decoding="async" onError={() => setFailedSource(src)} />
+      : <div className="company-photo-placeholder" role="img" aria-label={`Photography space reserved for ${alt}`} />}
+  </figure>;
+}
+
+const values = [
+  ['Nutrition & Wellbeing', 'Making nutritious foods and practical nutrition knowledge more accessible.'],
+  ['Quality & Care', 'Taking care in ingredient handling, processing and product presentation.'],
+  ['Integrity', 'Building trust through clear communication and responsible business practices.'],
+  ['Community Empowerment', 'Recognizing the contributions of farmers, women and local communities.'],
+  ['Agricultural Value Addition', 'Transforming agricultural ingredients into useful food products.'],
+];
+
+const productFamilies = [
+  ['Ready-to-Eat Snacks', 'Pumpkin seed granola bars and granola cereals.'],
+  ['Nutritional Powders & Flours', 'Pumpkin seed powder, pumpkin flour and butternut flour.'],
+  ['Premium Seeds', 'Pumpkin seeds, sunflower seeds, chia seeds, flax seeds, fenugreek seeds and sesame seeds.'],
+  ['Specialty Spreads & Oils', 'Pumpkin seed butter and pumpkin seed oil.'],
+];
 
 export default function About() {
   const location = useLocation();
-  const [factoryImage, setFactoryImage] = useState<string>('');
-  const [productionImage, setProductionImage] = useState<string>('');
-
+  useEffect(() => { trackPageView('/about'); }, []);
   useEffect(() => {
-    trackPageView('/about');
-    if (location.hash) {
-      const el = document.querySelector(location.hash);
-      if (el) {
-        setTimeout(() => {
-          el.scrollIntoView({ behavior: 'smooth' });
-        }, 100);
+    if (!location.hash) return;
+    const section = companySectionForHash(location.hash);
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(section);
+      if (target) {
+        target.scrollIntoView({ block: 'start', behavior: 'instant' });
+        target.focus({ preventScroll: true });
       }
-    }
-
-    // Fetch dynamic factory and production site images
-    fetch('/api/site-images?section=FACTORY')
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setFactoryImage(data[0].imageUrl);
-        }
-      })
-      .catch((e) => console.error('Error fetching factory image:', e));
-
-    fetch('/api/site-images?section=PRODUCTION')
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          // Use step 2/3 or first production image
-          const chosen = data.find((i) => i.position === 1) || data[0];
-          setProductionImage(chosen.imageUrl);
-        }
-      })
-      .catch((e) => console.error('Error fetching production image:', e));
+    }, 100);
+    return () => clearTimeout(timer);
   }, [location.hash]);
 
-  const coreValues = [
-    {
-      title: 'Quality',
-      desc: 'We never compromise on nutritional standard, taste, or hygiene. Only premium grades enter our shelves.',
-      icon: Award,
-      color: 'text-emerald-600 bg-emerald-50 border-emerald-100',
-    },
-    {
-      title: 'Integrity',
-      desc: 'Honest farming collaborations, fully authentic labeling, and transparent supply pipelines.',
-      icon: ShieldCheck,
-      color: 'text-orange-600 bg-orange-50 border-orange-100',
-    },
-    {
-      title: 'Innovation',
-      desc: 'Continuously refining de-shelling and aseptic packaging techniques to maximize seed freshness and shelf life.',
-      icon: Lightbulb,
-      color: 'text-blue-600 bg-blue-50 border-blue-100',
-    },
-    {
-      title: 'Customer Focus',
-      desc: 'Structuring customizable package sizes, active direct ordering, and prioritizing client nutritional feedback.',
-      icon: Users,
-      color: 'text-purple-600 bg-purple-50 border-purple-100',
-    },
-    {
-      title: 'Safety',
-      desc: 'Stringent sterilization, hands-free packaging chambers, and full health standards compliance.',
-      icon: CheckSquare,
-      color: 'text-red-600 bg-red-50 border-red-100',
-    },
-  ];
-
-  return (
-    <div className="bg-white min-h-screen" id="about-page">
-      {/* Page Header */}
-      <section className="relative py-20 bg-emerald-950 text-white overflow-hidden">
-        <div className="absolute inset-0">
-          <SafeImage
-            src=""
-            alt="Organic food"
-            placeholderText="Upload About Banner"
-            className="w-full h-full object-cover opacity-15 filter brightness-50"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-emerald-950/70 to-emerald-950" />
+  return <div className="nita-page company-page company-page--about" id="about-page">
+    <div className="nita-page-inner">
+      <section className="company-introduction" id="introduction" aria-labelledby="company-title" tabIndex={-1}>
+        <div className="company-prose">
+          <p className="company-eyebrow">About NITA Food Products · Arusha, Tanzania</p>
+          <h1 id="company-title">Rooted in Arusha. <span>Nourishing Communities.</span></h1>
+          <p className="company-welcome">Welcome to NITA Food Products.</p>
+          <p>Based in Kiserian, Arusha, Tanzania, we are a women-led food processing and production company.</p>
+          <p>We specialize in transforming nutrient-dense seeds, with a particular focus on pumpkin-based ingredients, into convenient foods for everyday use.</p>
+          <a className="nita-story-link" href="#story">Read our story <span aria-hidden="true">→</span></a>
         </div>
-
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-4">
-          <span className="text-orange-400 text-xs font-bold uppercase tracking-widest bg-emerald-900 px-3 py-1 rounded-full border border-emerald-800 inline-block">
-            Corporate Profile
-          </span>
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight font-sans">
-            About NITA Food Products
-          </h1>
-          <p className="text-emerald-200/80 text-sm sm:text-base max-w-xl mx-auto">
-            Discover the story, principles, and people behind Tanzania’s premium food packaging and processing excellence.
-          </p>
-        </div>
+        <CompanyPhoto src={productTable} alt="NITA chia seed and granola pouches arranged with bowls of ingredients on a table" eager />
       </section>
 
-      {/* 1. Our Story Section */}
-      <section className="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" id="story">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
-          <div className="lg:col-span-7 space-y-6 text-left">
-            <span className="text-emerald-700 text-xs font-extrabold uppercase tracking-widest bg-emerald-50 px-3.5 py-1.5 rounded-full border border-emerald-100">
-              Our Journey & Roots
-            </span>
-            <h2 className="text-3xl font-extrabold text-emerald-950 font-sans tracking-tight leading-tight">
-              A Passion For Authentic Nutrition & Hygiene Standards
-            </h2>
-            <p className="text-gray-600 leading-relaxed text-sm sm:text-base">
-              NITA Food Products is an innovative agro-processing and food manufacturing enterprise headquartered in Tanzania. Founded on the core philosophy of <strong>"Eat healthy, Feel healthy, Look healthy,"</strong> we produce seed-based nutritious snacks and health bars of international quality.
-            </p>
-            <p className="text-gray-600 leading-relaxed text-sm sm:text-base">
-              We leverage the pristine, rich agricultural landscape of East Africa to secure organic raw pumpkin seeds, sunflower seeds, and whole-grains directly from trained farming communities. By cutting out middle channels, we guarantee that farmers receive equitable pricing, and our clients receive harvest-fresh quality.
-            </p>
-            <p className="text-gray-600 leading-relaxed text-sm sm:text-base">
-              Our state-of-the-art facility features automated mechanical hulling, light dry-roasting, and sterile hermetic sealing. We operate under absolute hygiene guidelines to minimize biological contamination, yielding rich products packed with clean energy, fibers, minerals, and healthy fats.
-            </p>
-          </div>
+      <section className="company-purpose" id="mission" aria-label="Our Vision & Mission" tabIndex={-1}>
+        <div><p className="company-eyebrow">Our purpose</p><h2>Our Vision</h2><p>To reduce malnutrition, diseases and improve livelihoods among people in the societies across the world.</p></div>
+        <div><h2>Our Mission</h2><p>Provision of healthy food products to the societies anywhere in the world.</p></div>
+      </section>
 
-          <div className="lg:col-span-5 relative">
-            <div className="absolute -bottom-4 -left-4 w-full h-full bg-orange-100 rounded-3xl -z-10" />
-            <SafeImage
-              src={factoryImage}
-              alt="NITA Food Processing Facility"
-              placeholderText="NITA Food Factory Facility"
-              className="w-full h-[450px] object-cover rounded-3xl shadow-xl border-4 border-white"
-            />
+      <section className="company-story" id="story" aria-labelledby="company-story-title" tabIndex={-1}>
+        <header><p className="company-eyebrow">Our beginnings</p><h2 id="company-story-title">Our Story: Born from a Mother's Experience</h2></header>
+        <div className="company-story-body">
+          <div className="company-prose">
+            <p className="company-story-lead">Nita Food Products was founded by Lilian Mmbando, whose personal journey through motherhood inspired a mission to improve access to nutritious food.</p>
+            <p>During her pregnancy, Lilian experienced fainting episodes and anaemia associated with nutritional deficiencies. After giving birth, she faced another challenge: difficulty producing enough breast milk to feed her newborn baby.</p>
+            <p>She began incorporating pumpkin seeds into her diet and, through her own experience, noticed an improvement in her breast milk supply. She was able to breastfeed her baby, who went on to grow in good health. This experience inspired her to explore how nutritious foods could support other mothers facing similar challenges.</p>
+            <p>In 2019, Nita Food Products began its journey by producing pumpkin seed powder, initially focusing on the nutritional needs of pregnant women and breastfeeding mothers.</p>
+            <p>Since then, Nita Food Products has grown beyond its original product, developing a wider range of nutritious foods and extending its reach to more families and communities.</p>
+            <p>Today, the company continues to promote healthier food choices through its products and community nutrition education, guided by the same purpose that inspired its beginnings.</p>
           </div>
         </div>
       </section>
 
-      {/* 2. Mission & Vision Section */}
-      <section className="py-20 bg-emerald-50 border-y border-emerald-100/50 px-4 md:px-8" id="mission">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12">
-          {/* Mission Card */}
-          <div className="bg-white p-8 sm:p-10 rounded-3xl border border-emerald-100 shadow-sm space-y-6 flex flex-col items-start text-left hover:shadow-md transition">
-            <div className="p-4 bg-emerald-50 rounded-2xl text-emerald-700">
-              <Target className="w-8 h-8" />
-            </div>
-            <div className="space-y-3">
-              <h3 className="text-2xl font-bold text-emerald-950 font-sans tracking-tight">
-                Our Corporate Mission
-              </h3>
-              <p className="text-gray-600 text-sm sm:text-base leading-relaxed italic">
-                "Provision of healthy food products to the societies anywhere in the world."
-              </p>
-            </div>
-            <div className="pt-4 border-t border-gray-100 w-full text-xs text-gray-500">
-              Fulfilling localized nutritional goals through global-standard manufacturing lines.
-            </div>
-          </div>
-
-          {/* Vision Card */}
-          <div className="bg-white p-8 sm:p-10 rounded-3xl border border-emerald-100 shadow-sm space-y-6 flex flex-col items-start text-left hover:shadow-md transition">
-            <div className="p-4 bg-orange-50 rounded-2xl text-orange-600">
-              <Eye className="w-8 h-8" />
-            </div>
-            <div className="space-y-3">
-              <h3 className="text-2xl font-bold text-emerald-950 font-sans tracking-tight">
-                Our Corporate Vision
-              </h3>
-              <p className="text-gray-600 text-sm sm:text-base leading-relaxed italic">
-                "To reduce malnutrition, diseases and improve livelihoods among people in the societies across the world."
-              </p>
-            </div>
-            <div className="pt-4 border-t border-gray-100 w-full text-xs text-gray-500">
-              Investing back into farmer welfare, sustainable packaging, and immune health.
-            </div>
-          </div>
+      <section className="company-products" id="products" aria-labelledby="company-products-title" tabIndex={-1}>
+        <header><p className="company-eyebrow">From agricultural ingredients to everyday foods</p><h2 id="company-products-title">What We Bring to Your Table</h2><p className="company-range-note">An overview of our product families. Visit our Shop for the current product range and pack information.</p></header>
+        <div className="company-products-body">
+          <CompanyPhoto src={productDisplay} alt="Two NITA pumpkin seed powder jars in different sizes" />
+          <div><dl>{productFamilies.map(([title, description]) => <div key={title}><dt>{title}</dt><dd>{description}</dd></div>)}</dl><Link to="/products" className="nita-story-link">Explore the Shop <span aria-hidden="true">→</span></Link></div>
         </div>
       </section>
 
-      {/* 3. Core Values Section */}
-      <section className="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-16" id="values">
-        <div className="max-w-2xl mx-auto space-y-4">
-          <span className="text-orange-500 text-xs font-extrabold uppercase tracking-widest bg-orange-50 px-3.5 py-1.5 rounded-full border border-orange-100 inline-block">
-            Our Pillars
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-emerald-950 font-sans tracking-tight">
-            NITA'S Immutable Core Values
-          </h2>
-          <p className="text-gray-500 text-sm">
-            These guiding principles form the bedrock of our manufacturing protocols, community relationships, and daily operations.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 text-left">
-          {coreValues.map((val, idx) => {
-            const Icon = val.icon;
-            return (
-              <div
-                key={idx}
-                className="bg-white p-6 rounded-3xl border border-gray-100 hover:border-emerald-100 hover:shadow-sm transition duration-300 space-y-5 flex flex-col justify-between"
-              >
-                <div className="space-y-4">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${val.color}`}>
-                    <Icon className="w-6 h-6" />
-                  </div>
-                  <h3 className="font-bold text-gray-900 text-base font-sans">{val.title}</h3>
-                  <p className="text-xs text-gray-500 leading-relaxed">{val.desc}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <section className="company-values" id="values" aria-labelledby="company-values-title" tabIndex={-1}>
+        <header><p className="company-eyebrow">Our approach</p><h2 id="company-values-title">What Guides Our Work</h2><p>These are the values that guides our work.</p></header>
+        <dl>{values.map(([title, text]) => <div key={title}><dt>{title}</dt><dd>{text}</dd></div>)}</dl>
       </section>
 
-      {/* 4. Production Facility Section */}
-      <section className="py-20 bg-slate-50 border-t border-gray-100 px-4 md:px-8" id="production">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <div className="space-y-6 text-left">
-            <span className="text-emerald-700 text-xs font-extrabold uppercase tracking-widest bg-emerald-100/60 px-3.5 py-1.5 rounded-full inline-flex items-center gap-1.5">
-              <Factory className="w-3.5 h-3.5" />
-              <span>Modern Manufacturing Plant</span>
-            </span>
-            <h2 className="text-3xl font-extrabold text-emerald-950 font-sans tracking-tight">
-              State-of-the-Art Processing Technology
-            </h2>
-            <p className="text-gray-600 text-sm sm:text-base leading-relaxed">
-              Our factory operates specialized high-throughput precision sorting, mechanical air-classification, and low-temperature dehydrating equipment that protects vital micronutrients, zinc, and healthy lipids.
-            </p>
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="bg-white p-4 rounded-2xl border border-gray-100">
-                <span className="text-2xl font-black text-emerald-800">99.8%</span>
-                <span className="text-xs text-gray-500 block">Purity Sorting Precision</span>
-              </div>
-              <div className="bg-white p-4 rounded-2xl border border-gray-100">
-                <span className="text-2xl font-black text-orange-500">&lt; 4%</span>
-                <span className="text-xs text-gray-500 block">Controlled Moisture Level</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="relative rounded-3xl overflow-hidden shadow-xl border-4 border-white bg-emerald-950 h-80 flex items-center justify-center">
-            <SafeImage
-              src={productionImage}
-              alt="NITA Production Equipment"
-              placeholderText="NITA Food Processing Machinery"
-              className="w-full h-full object-cover"
-            />
-          </div>
-        </div>
+      <section className="company-quality" id="production" aria-labelledby="company-quality-title" tabIndex={-1}>
+        <div className="company-prose"><p className="company-eyebrow">Care at every stage</p><h2 id="company-quality-title">Our Commitment to Quality</h2><p>At NITA Food Products, quality is an important part of how we source, handle, process and present our food products.</p><p>We aim to provide clear product information and maintain responsible food-processing practices.</p><Link className="nita-story-link" to="/contact">Ask about product information <span aria-hidden="true">→</span></Link></div>
+        <CompanyPhoto src={productDisplay} alt="Two NITA pumpkin seed powder jars in different sizes" />
       </section>
 
-      {/* 5. Sustainability Section */}
-      <section className="py-20 bg-emerald-900 text-white px-4 md:px-8" id="sustainability">
-        <div className="max-w-7xl mx-auto text-center space-y-8">
-          <div className="inline-flex items-center gap-2 bg-emerald-800/80 px-4 py-1.5 rounded-full border border-emerald-700 text-emerald-200 text-xs font-bold">
-            <Sprout className="w-4 h-4 text-emerald-400" />
-            <span>Community & Sustainability</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold font-sans">
-            Empowering Tanzanian Agricultural Communities
-          </h2>
-          <p className="text-emerald-100/80 max-w-2xl mx-auto text-sm sm:text-base leading-relaxed">
-            Every pouch of NITA pumpkin seeds and wholesome snacks directly supports smallholder farmers in rural Tanzania. We provide training on sustainable harvesting, seed conservation, and guaranteed off-take contracts.
-          </p>
-        </div>
+      <section className="company-community" id="community" aria-labelledby="company-community-title" tabIndex={-1}>
+        <div><p className="company-eyebrow">Food, livelihoods & learning</p><h2 id="company-community-title">Empowering Communities Together</h2><div className="company-prose"><p>Nita Food Products connects food processing with agricultural livelihoods and nutrition education.</p><p>The company purchases agricultural ingredients from farmers, creates value through processing and provides employment opportunities within its operations.</p><p>Nita Food Products also participates in community engagement, workshops and exhibitions that help people learn more about food and nutrition.</p></div><Link className="nita-story-link" to="/educational-hub">Discover Nita Nutrition Academy <span aria-hidden="true">→</span></Link></div>
+        <CompanyPhoto src="/images/education/IMG-20261027-WA0070.jpg" alt="A speaker addressing adults seated outdoors beside a brick building" portrait />
+      </section>
+
+      <section className="company-discover" id="discover" aria-labelledby="company-discover-title" tabIndex={-1}>
+        <h2 id="company-discover-title">Discover Nita Food Products</h2>
+        <div><Link className="company-cta-primary" to="/products">Explore Our Shop</Link><Link className="company-cta-secondary" to="/contact">Get in Touch with Us</Link></div>
       </section>
     </div>
-  );
+  </div>;
 }

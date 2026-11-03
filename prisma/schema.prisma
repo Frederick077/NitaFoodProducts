@@ -5,6 +5,7 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 model Admin {
@@ -14,6 +15,12 @@ model Admin {
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+enum ProductPublicationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
 
 model Product {
@@ -30,8 +37,12 @@ model Product {
   featuredImagePublicId String?          @default("")
   available             Boolean          @default(true)
   isFeatured            Boolean          @default(false)
+  publicationStatus     ProductPublicationStatus @default(DRAFT)
   ingredients           String           @default("")
   benefits              String           @default("")
+  nutrients             String           @default("")
+  nutritionBasis        String           @default("")
+  howToUse              String           @default("")
   images                ProductImage[]
   variants              ProductVariant[]
   orders                Order[]
@@ -58,10 +69,10 @@ model ProductVariant {
   product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   name           String   @default("")
   size           String   @default("Standard")
-  price          Float    @default(0)
+  price          Float
   compareAtPrice Float?
   available      Boolean  @default(true)
-  stock          Int      @default(50)
+  stock          Int?     // Historical only; never used by website ordering.
   sku            String   @default("")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

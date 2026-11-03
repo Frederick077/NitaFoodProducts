@@ -1,137 +1,76 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
-import { X } from 'lucide-react';
 import { getWhatsAppLink } from '../utils';
+import { WhatsAppIcon, getOrderWhatsAppHref } from './SocialLinks';
 import { Product } from '../types';
 
-interface FloatingWhatsAppProps {
-  currentProduct?: {
-    name: string;
-    size?: string;
-  } | null;
-}
-
+interface FloatingWhatsAppProps { currentProduct?: { name: string; size?: string } | null; }
 export default function FloatingWhatsApp({ currentProduct }: FloatingWhatsAppProps) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-  const [detectedProduct, setDetectedProduct] = useState<{ name: string; size?: string } | null>(null);
   const location = useLocation();
-
+  const [detectedProduct, setDetectedProduct] = useState<{ name: string; size?: string } | null>(null);
+  const [dock, setDock] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    // If passed directly via prop, use that
-    if (currentProduct) {
-      setDetectedProduct(currentProduct);
-      return;
-    }
-
-    // Auto-detect if on a product detail route
+    setDetectedProduct(null);
+    if (currentProduct) return;
     const match = location.pathname.match(/^\/products\/([^/?#]+)/);
-    if (match && match[1]) {
-      const productId = match[1];
-      fetch(`/api/products/${productId}`)
-        .then((res) => {
-          if (res.ok) return res.json();
-          return null;
-        })
-        .then((prod: Product | null) => {
-          if (prod && prod.name) {
-            const firstSize = prod.variants?.[0]?.size;
-            setDetectedProduct({
-              name: prod.name,
-              size: firstSize,
-            });
-          } else {
-            setDetectedProduct(null);
-          }
-        })
-        .catch(() => setDetectedProduct(null));
-    } else {
-      setDetectedProduct(null);
-    }
+    if (!match) return;
+    const controller = new AbortController();
+    fetch(`/api/products/${match[1]}`, { signal: controller.signal }).then(res => res.ok ? res.json() : null)
+      .then((product: Product | null) => { if (!controller.signal.aborted && product?.name) setDetectedProduct({ name: product.name, size: product.variants?.[0]?.size }); })
+      .catch(() => { /* A failed lookup retains the general support message. */ });
+    return () => controller.abort();
   }, [location.pathname, currentProduct]);
-
-  // Context-aware WhatsApp URL
-  const activeProduct = currentProduct || detectedProduct;
-  const whatsappUrl = activeProduct
-    ? getWhatsAppLink(activeProduct.name, 1, activeProduct.size)
-    : getWhatsAppLink();
-
-  // Auto-show tooltip briefly on first load or page navigation
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowTooltip(true);
-    }, 2500);
-
-    const hideTimer = setTimeout(() => {
-      setShowTooltip(false);
-    }, 8000);
-
+    // Dock in a reserved footer row while footer/form content is being read.
+    // Keep the control in normal flow there rather than covering mobile fields or links.
+    const slot = document.getElementById('nita-whatsapp-dock');
+    const targets = ['main-footer', 'nita-contact-form-panel', 'cta-contact', 'product-detail-view', 'checkout-page']
+      .map(id => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
+    // Product information arrives asynchronously; observe its stable main region.
+    const main = document.querySelector('main');
+    if (location.pathname.startsWith('/products/') && main) targets.push(main);
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      // Do not move a link while someone is using it with the keyboard.
+      if (document.activeElement?.id === 'floating-whatsapp-btn') return;
+      const control = document.getElementById('floating-whatsapp-btn');
+      if (!control) return;
+      const style = getComputedStyle(control);
+      const right = document.documentElement.clientWidth - (parseFloat(style.right) || 16);
+      const bottom = innerHeight - (parseFloat(style.bottom) || 16);
+      const wouldCoverControl = [...(main?.querySelectorAll('a,button,input,select,textarea,summary') || [])].some(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.left < right && rect.right > right - 52 && rect.top < bottom && rect.bottom > bottom - 52;
+      });
+      const contextualContentVisible = targets.some(target => {
+        const rect = target.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+      });
+      setDock(contextualContentVisible || wouldCoverControl ? slot : null);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    const observer = new IntersectionObserver(update);
+    targets.forEach(target => observer.observe(target));
+    const resize = new ResizeObserver(schedule);
+    if (main) resize.observe(main);
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    document.addEventListener('focusout', schedule);
+    schedule();
     return () => {
-      clearTimeout(timer);
-      clearTimeout(hideTimer);
+      observer.disconnect(); resize.disconnect(); cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      document.removeEventListener('focusout', schedule);
     };
   }, [location.pathname]);
-
-  return (
-    <div
-      className="fixed bottom-6 right-6 z-40 flex flex-col items-end pointer-events-auto"
-      id="floating-whatsapp-container"
-    >
-      {/* Tooltip / Prompt bubble */}
-      {(showTooltip || isHovered) && (
-        <div
-          className="mb-3 max-w-[240px] bg-white text-gray-800 text-xs py-2.5 px-3.5 rounded-2xl shadow-xl border border-emerald-100 flex items-center gap-2 animate-fade-in text-left select-none relative"
-          id="whatsapp-tooltip-bubble"
-        >
-          <div className="flex-1">
-            <span className="font-extrabold text-emerald-900 block text-[11px]">Chat with NITA</span>
-            <p className="text-[10px] text-gray-600 leading-snug">
-              {activeProduct ? `Order ${activeProduct.name}` : 'Order directly or ask questions'}
-            </p>
-          </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowTooltip(false);
-              setIsHovered(false);
-            }}
-            className="text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
-            aria-label="Dismiss chat tooltip"
-          >
-            <X className="w-3 h-3" />
-          </button>
-          {/* Arrow pointing down */}
-          <div className="absolute -bottom-1.5 right-6 w-3 h-3 bg-white border-b border-r border-emerald-100 transform rotate-45" />
-        </div>
-      )}
-
-      {/* Floating Action Button */}
-      <a
-        href={whatsappUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        className="group relative flex items-center justify-center w-14 h-14 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-full shadow-2xl shadow-emerald-950/20 hover:scale-110 active:scale-95 transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-[#25D366]/40"
-        aria-label="Chat with NITA Food Products on WhatsApp"
-        id="floating-whatsapp-btn"
-      >
-        {/* Radar Pulse Effect */}
-        <span className="absolute -inset-1 rounded-full bg-[#25D366] opacity-30 group-hover:animate-ping" />
-
-        {/* WhatsApp Icon (Official SVG) */}
-        <svg
-          className="w-7 h-7 fill-current relative z-10"
-          viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path d="M17.507 14.307l-.009.075c-.239.988-1.381 1.77-2.316 1.73-.671-.028-1.536-.341-2.92-1.026-2.28-1.127-3.753-3.468-3.867-3.626-.115-.157-.929-1.238-.929-2.361 0-1.124.586-1.677.794-1.907.208-.23.454-.288.605-.288.152 0 .303.001.436.008.14.008.328-.053.513.391.19.458.648 1.58.705 1.695.057.115.095.25.019.402-.076.153-.114.248-.227.382-.114.134-.239.299-.341.402-.114.114-.233.238-.1.467.133.228.591.975 1.269 1.579.873.777 1.609 1.018 1.837 1.132.228.114.361.095.494-.057.133-.153.57-.665.722-.894.152-.228.304-.19.513-.114.209.076 1.328.627 1.556.741.228.114.38.171.436.266.057.095.057.551-.182 1.539z" />
-          <path d="M12.004 0C5.373 0 0 5.373 0 12c0 2.12.552 4.11 1.517 5.84L0 24l6.32-1.488C8.01 23.47 9.957 24 12.004 24c6.627 0 12-5.373 12-12s-5.373-12-12.004-12zm0 22.02c-1.87 0-3.636-.504-5.163-1.385l-.37-.214-3.748.882.905-3.652-.236-.386A9.97 9.97 0 012.004 12c0-5.514 4.486-10 10-10s10 4.486 10 10-4.486 10.02-10 10.02z" />
-        </svg>
-
-        {/* Live indicator dot */}
-        <span className="absolute top-0 right-0 w-3.5 h-3.5 bg-orange-500 border-2 border-white rounded-full z-20" />
-      </a>
-    </div>
-  );
+  const active = currentProduct || detectedProduct;
+  const footerOrder = !!dock && !active;
+  const content = <a href={active ? getWhatsAppLink(active.name, 1, active.size) : footerOrder ? getOrderWhatsAppHref() : getWhatsAppLink()} target="_blank" rel="noopener noreferrer"
+    className={`nita-whatsapp${dock ? ' is-docked' : ''}`} aria-label={footerOrder ? "Order directly from NITA Food Products on WhatsApp (opens in a new tab)" : "Chat with NITA Food Products on WhatsApp (opens in a new tab)"} id="floating-whatsapp-btn">
+    <WhatsAppIcon />
+  </a>;
+  return dock ? createPortal(content, dock) : content;
 }

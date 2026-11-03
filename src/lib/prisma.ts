@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
 
 const isDatabaseConfigured = Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== '');
 
@@ -24,9 +23,8 @@ if (isDatabaseConfigured) {
   }
 }
 
-// In-memory fallback dataset for development / preview when DATABASE_URL is not yet connected
+// Development-only fallback dataset; production and Vercel previews fail closed.
 class InMemoryDB {
-  admins: any[] = [];
   products: any[] = [];
   productImages: any[] = [];
   productVariants: any[] = [];
@@ -41,17 +39,6 @@ class InMemoryDB {
   }
 
   private seed() {
-    const salt = bcrypt.genSaltSync(10);
-    const passwordHash = bcrypt.hashSync('admin123', salt);
-    this.admins.push({
-      id: 'admin-1',
-      name: 'NITA Administrator',
-      email: 'admin@nitafoods.local',
-      passwordHash,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
     const defaultProducts = [
       {
         id: 'prod-1',
@@ -245,48 +232,14 @@ class InMemoryDB {
   }
 }
 
-const memDB = new InMemoryDB();
+const memDB = process.env.NODE_ENV === 'production'
+  ? new Proxy({} as InMemoryDB, { get() { throw new Error('PostgreSQL is unavailable.'); } })
+  : new InMemoryDB();
 
 // Unified Prisma-compatible facade
 export const prisma: any = {
-  admin: {
-    count: async () => {
-      if (realPrisma) {
-        try { return await realPrisma.admin.count(); } catch (e) { /* fallback */ }
-      }
-      return memDB.admins.length;
-    },
-    create: async ({ data }: any) => {
-      if (realPrisma) {
-        try { return await realPrisma.admin.create({ data }); } catch (e) { /* fallback */ }
-      }
-      const newAdmin = {
-        id: `admin-${Date.now()}`,
-        name: data.name,
-        email: data.email,
-        passwordHash: data.passwordHash,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      memDB.admins.push(newAdmin);
-      return newAdmin;
-    },
-    findUnique: async ({ where }: any) => {
-      if (realPrisma) {
-        try {
-          const res = await realPrisma.admin.findUnique({ where });
-          if (res) return res;
-        } catch (e) { /* fallback */ }
-      }
-      if (where.email) {
-        return memDB.admins.find((a) => a.email.toLowerCase() === where.email.toLowerCase()) || null;
-      }
-      if (where.id) {
-        return memDB.admins.find((a) => a.id === where.id) || null;
-      }
-      return null;
-    },
-  },
+  // Authentication and admin operations always use persisted PostgreSQL records.
+  get admin() { return requireDatabase().admin; },
 
   product: {
     count: async (args?: any) => {
@@ -306,6 +259,8 @@ export const prisma: any = {
       }
       let prods = [...memDB.products];
       if (args?.where) {
+        if (args.where.publicationStatus) prods = prods.filter(p => (p.publicationStatus || 'PUBLISHED') === args.where.publicationStatus);
+        if (args.where.categoryId) prods = prods.filter(p => p.categoryId === args.where.categoryId);
         if (args.where.isFeatured !== undefined) {
           prods = prods.filter(p => p.isFeatured === args.where.isFeatured);
         }
@@ -424,7 +379,6 @@ export const prisma: any = {
             price: Number(v.price) || 0,
             compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
             available: v.available !== undefined ? v.available : true,
-            stock: v.stock !== undefined ? Number(v.stock) : 50,
             sku: v.sku || `SKU-${newId}-${idx}`,
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -482,7 +436,6 @@ export const prisma: any = {
             price: Number(v.price) || 0,
             compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
             available: v.available !== undefined ? v.available : true,
-            stock: v.stock !== undefined ? Number(v.stock) : 50,
             sku: v.sku || `SKU-${where.id}-${idx}`,
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -602,7 +555,6 @@ export const prisma: any = {
             price: Number(item.price) || 0,
             compareAtPrice: item.compareAtPrice ? Number(item.compareAtPrice) : null,
             available: item.available !== undefined ? item.available : true,
-            stock: item.stock !== undefined ? Number(item.stock) : 50,
             sku: item.sku || '',
             createdAt: new Date(),
             updatedAt: new Date(),
